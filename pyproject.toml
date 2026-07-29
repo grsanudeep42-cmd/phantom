@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "phantom"
+version = "0.1.0"
+description = "AI-powered penetration testing agent — thinks like a senior red teamer"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [
+    { name = "Anudeep", email = "grsanudeep42@gmail.com" }
+]
+keywords = ["security", "pentesting", "ai", "red-team", "bug-bounty"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Information Technology",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Security",
+]
+dependencies = [
+    "anthropic>=0.28.0",
+    "click>=8.1.0",
+    "rich>=13.7.0",
+    "python-dotenv>=1.0.0",
+    "jinja2>=3.1.0",
+    "faker>=24.0.0",
+    "aiohttp>=3.9.0",
+    "aiosmtpd>=1.4.4",
+]
+
+[project.scripts]
+phantom = "cli.main:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["core*", "agents*", "registry*", "identity*", "reporting*", "cli*", "config*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

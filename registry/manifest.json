@@ -1,0 +1,145 @@
+{
+  "schema_version": "1.0",
+  "tools": [
+    {
+      "id": "nmap",
+      "category": "recon",
+      "description": "Port scanner and service fingerprinter — the go-to for footprinting",
+      "install": {
+        "linux": "apt-get install -y nmap",
+        "darwin": "brew install nmap",
+        "docker": "instrumentisto/nmap"
+      },
+      "version_cmd": "nmap --version",
+      "version_regex": "Nmap ([\\d.]+)",
+      "min_version": "7.9",
+      "tags": ["recon", "network", "ports", "fingerprint"]
+    },
+    {
+      "id": "subfinder",
+      "category": "osint",
+      "description": "Fast passive subdomain discovery using multiple sources",
+      "install": {
+        "linux": "go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest",
+        "darwin": "go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest",
+        "docker": "projectdiscovery/subfinder"
+      },
+      "version_cmd": "subfinder -version",
+      "version_regex": "subfinder v([\\d.]+)",
+      "min_version": "2.5",
+      "tags": ["osint", "subdomains", "passive"]
+    },
+    {
+      "id": "nuclei",
+      "category": "vuln_scan",
+      "description": "Template-based vulnerability scanner — covers thousands of CVEs",
+      "install": {
+        "linux": "go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest",
+        "darwin": "go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest",
+        "docker": "projectdiscovery/nuclei"
+      },
+      "version_cmd": "nuclei -version",
+      "version_regex": "Nuclei Engine Version: v([\\d.]+)",
+      "min_version": "3.0",
+      "tags": ["vuln_scan", "cve", "web", "templates"]
+    },
+    {
+      "id": "httpx",
+      "category": "recon",
+      "description": "Fast HTTP prober — checks status codes, titles, tech stack across bulk targets",
+      "install": {
+        "linux": "go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest",
+        "darwin": "go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest",
+        "docker": "projectdiscovery/httpx"
+      },
+      "version_cmd": "httpx -version",
+      "version_regex": "httpx v([\\d.]+)",
+      "min_version": "1.3",
+      "tags": ["recon", "web", "http", "fingerprint"]
+    },
+    {
+      "id": "ffuf",
+      "category": "fuzzing",
+      "description": "Fast web fuzzer — directory brute-force, parameter discovery, vhost enum",
+      "install": {
+        "linux": "go install github.com/ffuf/ffuf/v2@latest",
+        "darwin": "go install github.com/ffuf/ffuf/v2@latest",
+        "docker": "ghcr.io/ffuf/ffuf"
+      },
+      "version_cmd": "ffuf -V",
+      "version_regex": "ffuf v([\\d.]+)",
+      "min_version": "2.0",
+      "tags": ["fuzzing", "web", "directories", "params"]
+    },
+    {
+      "id": "gobuster",
+      "category": "fuzzing",
+      "description": "Directory/DNS/vhost brute-forcer written in Go",
+      "install": {
+        "linux": "apt-get install -y gobuster",
+        "darwin": "brew install gobuster",
+        "docker": "ghcr.io/oj/gobuster"
+      },
+      "version_cmd": "gobuster version",
+      "version_regex": "([\\d.]+)",
+      "min_version": "3.5",
+      "tags": ["fuzzing", "directories", "dns", "web"]
+    },
+    {
+      "id": "sqlmap",
+      "category": "exploit",
+      "description": "Automatic SQL injection detection and exploitation tool",
+      "install": {
+        "linux": "apt-get install -y sqlmap",
+        "darwin": "brew install sqlmap",
+        "docker": "paoloo/sqlmap"
+      },
+      "version_cmd": "sqlmap --version",
+      "version_regex": "([\\d.]+)",
+      "min_version": "1.7",
+      "tags": ["exploit", "sqli", "web", "database"]
+    },
+    {
+      "id": "whatweb",
+      "category": "recon",
+      "description": "Next-gen web scanner — identifies CMS, frameworks, server software",
+      "install": {
+        "linux": "apt-get install -y whatweb",
+        "darwin": "brew install whatweb",
+        "docker": "extremeshok/whatweb"
+      },
+      "version_cmd": "whatweb --version",
+      "version_regex": "WhatWeb version ([\\d.]+)",
+      "min_version": "0.5",
+      "tags": ["recon", "web", "fingerprint", "cms"]
+    },
+    {
+      "id": "nikto",
+      "category": "vuln_scan",
+      "description": "Web server vulnerability scanner — checks for dangerous files, outdated software",
+      "install": {
+        "linux": "apt-get install -y nikto",
+        "darwin": "brew install nikto",
+        "docker": "frapsoft/nikto"
+      },
+      "version_cmd": "nikto -Version",
+      "version_regex": "Nikto v([\\d.]+)",
+      "min_version": "2.1",
+      "tags": ["vuln_scan", "web", "server", "misconfig"]
+    },
+    {
+      "id": "theHarvester",
+      "category": "osint",
+      "description": "OSINT tool for gathering emails, names, subdomains from public sources",
+      "install": {
+        "linux": "apt-get install -y theharvester",
+        "darwin": "brew install theharvester",
+        "docker": "ghcr.io/laramies/theharvester"
+      },
+      "version_cmd": "theHarvester -h",
+      "version_regex": "theHarvester ([\\d.]+)",
+      "min_version": "4.2",
+      "tags": ["osint", "emails", "subdomains", "passive"]
+    }
+  ]
+}
