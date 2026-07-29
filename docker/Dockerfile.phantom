@@ -1,0 +1,29 @@
+# PHANTOM — Main application image
+FROM python:3.12-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PHANTOM_DATA_DIR=/root/.phantom \
+    PHANTOM_DOCKER_MODE=true
+
+WORKDIR /app
+
+# System deps
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    docker.io curl git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Python deps
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt mcp>=1.0.0
+
+# App source
+COPY . .
+RUN pip install --no-cache-dir -e .
+
+# Data directory
+RUN mkdir -p /root/.phantom
+
+# Run init on first launch
+ENTRYPOINT ["python", "-m", "cli.main"]
+CMD ["--help"]

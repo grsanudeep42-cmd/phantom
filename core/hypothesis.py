@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from core import session as db
+from core.llm import chat_text
 from core.session import Session
 
 
@@ -39,8 +40,6 @@ async def generate(
     Generate AI-powered next-action hypotheses from session findings.
     Returns a list of Hypothesis objects sorted by confidence (highest first).
     """
-    from core.llm import chat_text
-
     findings = db.get_findings(session.id)
     tried = db.get_tried(session.id)
 
@@ -95,8 +94,11 @@ async def generate(
         # Persist to DB
         for h in hyps:
             db.add_hypothesis(
-                session.id, h.hypothesis, h.suggested_tool,
-                h.confidence, h.reasoning
+                session.id,
+                h.hypothesis,
+                rationale=h.reasoning,
+                suggested_tool=h.suggested_tool,
+                confidence=h.confidence,
             )
 
         return hyps

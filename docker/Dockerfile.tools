@@ -1,0 +1,57 @@
+# PHANTOM — Tool Runner Container
+# Multi-stage: install all security tools, then copy into slim runtime
+
+FROM debian:bookworm-slim AS base
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    GOVERSION=1.22.5 \
+    GOROOT=/usr/local/go \
+    GOPATH=/go \
+    PATH="/usr/local/go/bin:/go/bin:/root/.cargo/bin:${PATH}"
+
+# ── System deps ───────────────────────────────────────────────────────────────
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl wget git ca-certificates unzip python3 python3-pip \
+    nmap nikto whois dnsutils netcat-openbsd \
+    && rm -rf /var/lib/apt/lists/*
+
+# ── Go (for subfinder, httpx, nuclei, ffuf, katana) ──────────────────────────
+RUN curl -fsSL "https://go.dev/dl/go${GOVERSION}.linux-amd64.tar.gz" \
+    | tar -C /usr/local -xz
+
+# ── Go tools ──────────────────────────────────────────────────────────────────
+RUN go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest && \
+    go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest           && \
+    go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest      && \
+    go install -v github.com/ffuf/ffuf/v2@latest                               && \
+    go install -v github.com/OJ/gobuster/v3@latest                             && \
+    go install -v github.com/projectdiscovery/katana/cmd/katana@latest
+
+# ── Python tools ──────────────────────────────────────────────────────────────
+RUN pip3 install --no-cache-dir sqlmap theHarvester whatweb
+
+# ── Nuclei templates ──────────────────────────────────────────────────────────
+RUN /go/bin/nuclei -update-templates -silent 2>/dev/null || true
+
+# ── Runtime image ──────────────────────────────────────────────────────────────
+FROM debian:bookworm-slim AS runtime
+
+ENV PATH="/usr/local/go/bin:/go/bin:/usr/local/bin:${PATH}"
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    nmap nikto python3 python3-pip ca-certificates dnsutils \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=base /usr/local/go /usr/local/go
+COPY --from=base /go/bin       /go/bin
+COPY --from=base /root/nuclei-templates /root/nuclei-templates
+
+RUN pip3 install --no-cache-dir sqlmap theHarvester
+
+# Drop root for safety during tool runs
+RUN useradd -m -s /bin/bash phantom
+USER phantom
+WORKDIR /workspace
+
+ENTRYPOINT []
+CMD ["/bin/bash"]

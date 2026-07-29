@@ -66,17 +66,53 @@ def _is_docker_available() -> bool:
     return shutil.which("docker") is not None
 
 
+_PHANTOM_TOOLS_IMAGE = "phantom-tools:latest"
+
+# Capabilities dropped for all tool containers
+_DROP_CAPS = [
+    "CAP_SYS_ADMIN", "CAP_NET_ADMIN", "CAP_SYS_PTRACE",
+    "CAP_SYS_MODULE", "CAP_SYS_RAWIO", "CAP_MKNOD",
+    "CAP_AUDIT_WRITE", "CAP_SETUID", "CAP_SETGID",
+]
+
+
 async def _run_docker(
     docker_image: str,
     args: list[str],
     timeout: int,
+    network: str = "host",
+    read_only: bool = False,
 ) -> ToolResult:
-    """Run a tool via Docker container."""
+    """
+    Run a tool via Docker container with hardened sandbox settings.
+
+    Security controls:
+    - --no-new-privileges: prevents privilege escalation
+    - --cap-drop ALL: drops all Linux capabilities
+    - --security-opt no-new-privileges: belt-and-suspenders
+    - --read-only + --tmpfs: optional immutable root filesystem
+    - Configurable network mode (host for scanning, bridge for isolation)
+    """
     start = time.monotonic()
+
+    # Use phantom-tools pre-built image if image is just a tool name
+    if docker_image.startswith("tool:"):
+        docker_image = _PHANTOM_TOOLS_IMAGE
+
     docker_args = [
-        "docker", "run", "--rm", "--network=host",
-        docker_image,
-    ] + args
+        "docker", "run", "--rm",
+        f"--network={network}",
+        "--no-new-privileges",
+        "--cap-drop", "ALL",
+        "--security-opt", "no-new-privileges:true",
+        "--memory", "512m",
+        "--cpus", "1.0",
+    ]
+
+    if read_only:
+        docker_args += ["--read-only", "--tmpfs", "/tmp:rw,noexec,nosuid,size=64m"]
+
+    docker_args += [docker_image] + args
 
     try:
         proc = await asyncio.create_subprocess_exec(

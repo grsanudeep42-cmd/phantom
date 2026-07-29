@@ -1,0 +1,48 @@
+version: "3.9"
+
+services:
+  # ── PHANTOM CLI ──────────────────────────────────────────────────────────────
+  phantom:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.phantom
+    image: phantom:latest
+    container_name: phantom
+    env_file: ../.env
+    volumes:
+      - phantom-data:/root/.phantom
+      - /var/run/docker.sock:/var/run/docker.sock  # Docker-in-Docker for tool isolation
+    network_mode: host
+    stdin_open: true
+    tty: true
+    profiles: ["cli"]
+
+  # ── PHANTOM MCP Server ────────────────────────────────────────────────────────
+  phantom-mcp:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.phantom
+    image: phantom:latest
+    container_name: phantom-mcp
+    env_file: ../.env
+    command: ["python", "-m", "phantom_mcp.server.main"]
+    ports:
+      - "8765:8765"
+    volumes:
+      - phantom-data:/root/.phantom
+    restart: unless-stopped
+    profiles: ["mcp"]
+
+  # ── Tool runner (pre-built, reused by Docker mode) ────────────────────────────
+  phantom-tools:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.tools
+    image: phantom-tools:latest
+    container_name: phantom-tools
+    network_mode: host
+    profiles: ["tools"]
+
+volumes:
+  phantom-data:
+    name: phantom-data
