@@ -1,359 +1,304 @@
 """
 phantom/core/orchestrator.py
 
-The brain. Receives a task, reasons about it via Claude tool_use,
-delegates to the right agent, manages session context.
+The brain — an agentic tool-use loop that decides what to do next.
+Uses core.llm for provider-agnostic AI calls.
+Supports Anthropic tool_use AND OpenAI function calling transparently.
 """
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass
-from typing import Optional
+from typing import Any, Optional
 
-import anthropic
+from core import session as db
+from core.session import Session
+from core.memory import add_message, get_context_window
 
-from config.settings import settings
-from core import hypothesis as hyp_engine
-from core.session import (
-    Session,
-    get_findings,
-    get_hypotheses,
-    get_session,
-    get_tried,
-    update_session_status,
-)
+_SYSTEM = """You are PHANTOM — an elite AI security agent that thinks like a senior red teamer.
 
-_client: Optional[anthropic.AsyncAnthropic] = None
+You have access to tools for reconnaissance, vulnerability scanning, fuzzing, and analysis.
+You decide which tools to run, in which order, and how to interpret results.
 
+Rules:
+- ALWAYS check scope before touching any asset
+- NEVER run exploits unless mode is "red" and scope is confirmed
+- Think step-by-step: reconnaissance → footprinting → vulnerability assessment → exploitation
+- After each tool run, analyse the output and decide the next move
+- When you have enough findings, generate a comprehensive assessment
 
-def _get_client() -> anthropic.AsyncAnthropic:
-    global _client
-    if _client is None:
-        if not settings.anthropic_api_key:
-            raise ValueError("ANTHROPIC_API_KEY is not set.")
-        _client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
-    return _client
+Available agent modes: red, blue, grey, beginner
+Current mode guides what actions are permitted."""
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Response type
-# ─────────────────────────────────────────────────────────────────────────────
-
-@dataclass
-class AgentResponse:
-    session_id: str
-    agent: str
-    output: str
-    findings_count: int
-    hypotheses: list
-    status: str  # ok | error | paused
-
-    def to_json(self) -> str:
-        d = asdict(self)
-        d["hypotheses"] = [asdict(h) for h in self.hypotheses]
-        return json.dumps(d, indent=2)
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Mode detection
-# ─────────────────────────────────────────────────────────────────────────────
-
-MODE_KEYWORDS = {
-    "red":      ["attack", "exploit", "red team", "offensive", "hack", "penetrate"],
-    "blue":     ["defend", "hardening", "log", "incident", "siem", "blue team"],
-    "grey":     ["bug bounty", "oscp", "responsible disclosure", "cvss", "grey"],
-    "beginner": ["learn", "explain", "ctf", "what is", "beginner", "newbie"],
-    "scan":     ["scan", "recon", "discover", "enumerate", "footprint"],
-}
-
-
-def detect_mode(task: str) -> str:
-    task_lower = task.lower()
-    scores = {mode: 0 for mode in MODE_KEYWORDS}
-    for mode, keywords in MODE_KEYWORDS.items():
-        for kw in keywords:
-            if kw in task_lower:
-                scores[mode] += 1
-    best = max(scores, key=lambda m: scores[m])
-    return best if scores[best] > 0 else "scan"
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Tool definitions for Claude tool_use
-# ─────────────────────────────────────────────────────────────────────────────
-
-ORCHESTRATOR_TOOLS = [
-    {
-        "name": "run_recon",
-        "description": "Run reconnaissance on a target. Includes subdomain enum, port scan, HTTP probing.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "target": {"type": "string", "description": "Target domain or IP"},
-                "session_id": {"type": "string", "description": "Active session ID"},
-            },
-            "required": ["target", "session_id"],
-        },
-    },
-    {
-        "name": "run_vuln_scan",
-        "description": "Run vulnerability scan using nuclei templates against a target.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "target": {"type": "string"},
-                "session_id": {"type": "string"},
-                "severity": {
-                    "type": "string",
-                    "description": "Minimum severity: critical, high, medium, low, info",
-                    "default": "medium",
-                },
-            },
-            "required": ["target", "session_id"],
-        },
-    },
+# Tool definitions (normalised — works for both Anthropic and OpenAI)
+TOOL_DEFINITIONS = [
     {
         "name": "run_tool",
-        "description": "Run a specific security tool with custom arguments.",
+        "description": "Execute a security tool from the registry. Tool is installed on demand if not present.",
         "input_schema": {
             "type": "object",
             "properties": {
                 "tool_id": {
                     "type": "string",
-                    "description": "Tool ID from manifest (nmap, nuclei, ffuf, etc.)",
+                    "description": "Tool ID from registry (e.g. nmap, subfinder, nuclei, ffuf, httpx)"
                 },
                 "args": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Command line arguments for the tool",
+                    "description": "Command-line arguments for the tool"
                 },
-                "session_id": {"type": "string"},
-                "timeout": {"type": "integer", "default": 300},
+                "timeout": {
+                    "type": "integer",
+                    "description": "Timeout in seconds (default 300)",
+                    "default": 300
+                }
             },
-            "required": ["tool_id", "args", "session_id"],
-        },
-    },
-    {
-        "name": "get_session_state",
-        "description": "Get the current session findings and tried actions for context.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "session_id": {"type": "string"},
-            },
-            "required": ["session_id"],
-        },
+            "required": ["tool_id", "args"]
+        }
     },
     {
         "name": "add_finding",
-        "description": "Record a new finding discovered during analysis.",
+        "description": "Record a security finding to the session database.",
         "input_schema": {
             "type": "object",
             "properties": {
-                "session_id": {"type": "string"},
-                "type": {"type": "string", "description": "e.g. sqli, xss, open_port, subdomain"},
-                "description": {"type": "string"},
+                "type": {"type": "string", "description": "Finding type (e.g. sqli, xss, open_port, subdomain)"},
+                "description": {"type": "string", "description": "Human-readable description"},
                 "severity": {"type": "string", "enum": ["critical", "high", "medium", "low", "info"]},
-                "proof": {"type": "string", "description": "Evidence or PoC snippet"},
+                "proof": {"type": "string", "description": "Evidence or PoC string"}
             },
-            "required": ["session_id", "type", "description", "severity"],
-        },
+            "required": ["type", "description", "severity"]
+        }
     },
+    {
+        "name": "get_findings",
+        "description": "Retrieve all findings recorded so far in this session.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "severity_filter": {
+                    "type": "string",
+                    "description": "Optional filter: critical | high | medium | low | info"
+                }
+            }
+        }
+    },
+    {
+        "name": "delegate_agent",
+        "description": "Delegate to a specialised sub-agent (red/blue/grey/identity).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "agent": {"type": "string", "enum": ["red", "blue", "grey", "identity", "beginner"]},
+                "task": {"type": "string", "description": "Specific task for the agent"}
+            },
+            "required": ["agent", "task"]
+        }
+    },
+    {
+        "name": "generate_report",
+        "description": "Generate a formatted vulnerability report from session findings.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "format": {"type": "string", "enum": ["generic", "hackerone", "bugcrowd"]}
+            }
+        }
+    },
+    {
+        "name": "finish",
+        "description": "Signal that the engagement is complete. Summarise what was found.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "summary": {"type": "string", "description": "Engagement summary"}
+            },
+            "required": ["summary"]
+        }
+    }
 ]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Tool execution handler
+# Tool dispatcher
 # ─────────────────────────────────────────────────────────────────────────────
 
-async def _handle_tool_call(tool_name: str, tool_input: dict) -> str:
-    """Execute a tool_use call from Claude and return string result."""
-    from core import session as db
-    from registry.runner import run_tool, ToolNotAvailableError
+async def _dispatch(tool_name: str, tool_input: dict, session: Session) -> str:
+    """Execute the tool requested by the AI and return a string result."""
+    try:
+        if tool_name == "run_tool":
+            from registry.runner import run_tool as rt, ToolNotAvailableError
+            try:
+                result = await rt(
+                    tool_input["tool_id"],
+                    tool_input.get("args", []),
+                    timeout=tool_input.get("timeout", 300),
+                )
+                db.add_tried(
+                    session.id,
+                    tool_input["tool_id"],
+                    tool_input.get("args", []),
+                    result.summary(),
+                    result.exit_code,
+                )
+                return json.dumps({
+                    "stdout": result.stdout[:3000],
+                    "stderr": result.stderr[:500],
+                    "exit_code": result.exit_code,
+                    "duration": result.duration,
+                    "truncated": result.truncated,
+                })
+            except ToolNotAvailableError as e:
+                return json.dumps({"error": str(e)})
 
-    if tool_name == "get_session_state":
-        session_id = tool_input["session_id"]
-        findings = db.get_findings(session_id)
-        tried = db.get_tried(session_id)
-        return json.dumps({
-            "findings": [asdict(f) for f in findings],
-            "tried": [asdict(t) for t in tried],
-        })
-
-    elif tool_name == "add_finding":
-        session_id = tool_input["session_id"]
-        f = db.add_finding(
-            session_id=session_id,
-            type=tool_input["type"],
-            description=tool_input["description"],
-            severity=tool_input.get("severity", "info"),
-            proof=tool_input.get("proof", ""),
-        )
-        return json.dumps({"status": "ok", "finding_id": f.id})
-
-    elif tool_name == "run_tool":
-        tool_id = tool_input["tool_id"]
-        args = tool_input["args"]
-        session_id = tool_input["session_id"]
-        timeout = tool_input.get("timeout", 300)
-        try:
-            result = await run_tool(tool_id, args, timeout=timeout)
-            db.add_tried(
-                session_id, tool_id, args,
-                result_summary=result.summary(),
-                exit_code=result.exit_code,
+        elif tool_name == "add_finding":
+            db.add_finding(
+                session.id,
+                tool_input["type"],
+                tool_input["description"],
+                tool_input.get("severity", "info"),
+                tool_input.get("proof", ""),
             )
-            return result.to_json()
-        except ToolNotAvailableError as e:
-            return json.dumps({"error": str(e)})
+            return json.dumps({"status": "recorded"})
 
-    elif tool_name == "run_recon":
-        # Delegate to red agent recon phase
-        from agents.red_agent import run_recon_phase
-        target = tool_input["target"]
-        session_id = tool_input["session_id"]
-        output = await run_recon_phase(target, session_id)
-        return output
+        elif tool_name == "get_findings":
+            findings = db.get_findings(session.id)
+            sev = tool_input.get("severity_filter")
+            if sev:
+                findings = [f for f in findings if f.severity == sev]
+            return json.dumps([{
+                "type": f.type,
+                "description": f.description,
+                "severity": f.severity,
+                "proof": f.proof[:200] if f.proof else "",
+            } for f in findings])
 
-    elif tool_name == "run_vuln_scan":
-        from agents.red_agent import run_vuln_scan_phase
-        target = tool_input["target"]
-        session_id = tool_input["session_id"]
-        severity = tool_input.get("severity", "medium")
-        output = await run_vuln_scan_phase(target, session_id, severity)
-        return output
+        elif tool_name == "delegate_agent":
+            return json.dumps({
+                "status": "delegated",
+                "agent": tool_input["agent"],
+                "note": "Delegation acknowledged — run the sub-agent pipeline"
+            })
 
-    return json.dumps({"error": f"Unknown tool: {tool_name}"})
+        elif tool_name == "generate_report":
+            from reporting.generator import generate_report
+            report = generate_report(session, format=tool_input.get("format", "generic"))
+            return report[:2000]  # Truncated for context window
+
+        elif tool_name == "finish":
+            return json.dumps({"status": "finished", "summary": tool_input.get("summary", "")})
+
+        else:
+            return json.dumps({"error": f"Unknown tool: {tool_name}"})
+
+    except Exception as e:
+        return json.dumps({"error": str(e)})
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Main orchestrator
+# Agentic loop
 # ─────────────────────────────────────────────────────────────────────────────
-
-SYSTEM_PROMPT = """You are PHANTOM, an AI-powered penetration testing agent.
-You think like a senior red teamer. You are methodical, precise, and strategic.
-
-Current session:
-- Target: {target}
-- Mode: {mode}
-- Scope: {scope}
-- Findings so far: {findings_count}
-- Actions tried: {tried_count}
-
-RULES you must follow:
-1. Never run tools outside the declared scope
-2. Always think about what the most impactful next action is
-3. Record every finding with add_finding — even informational ones
-4. When you're done, summarize what was found clearly
-
-You have tools available. Use them systematically."""
-
 
 async def run(
-    task: str,
     session: Session,
-    mode: Optional[str] = None,
-) -> AgentResponse:
+    user_message: str,
+    max_iterations: int = 20,
+) -> str:
     """
-    Main entry point. Process a task for a given session.
-    Uses Claude tool_use to reason and delegate.
+    Run the agentic tool-use loop.
+    Returns a final summary string when done.
     """
-    if not mode:
-        mode = detect_mode(task)
+    from core.llm import chat, get_config
+    from cli.ui import info, step, warn
 
-    findings = get_findings(session.id)
-    tried = get_tried(session.id)
+    cfg = get_config()
+    info(f"Orchestrator using: {cfg.summary()}")
 
-    system = SYSTEM_PROMPT.format(
-        target=session.target,
-        mode=mode,
-        scope=", ".join(session.scope) or "not set",
-        findings_count=len(findings),
-        tried_count=len(tried),
-    )
+    # Restore conversation context
+    history = get_context_window(session.id)
+    add_message(session.id, "user", user_message)
 
-    messages = [{"role": "user", "content": task}]
-    client = _get_client()
+    messages = history + [{"role": "user", "content": user_message}]
 
-    full_output_parts = []
-    last_error = None
+    for iteration in range(max_iterations):
+        response = await chat(
+            messages=messages,
+            system=_SYSTEM,
+            max_tokens=4096,
+            tools=TOOL_DEFINITIONS,
+            cfg=cfg,
+        )
 
-    # Agentic loop — continue until Claude stops calling tools
-    for _turn in range(20):  # Hard cap on turns
-        for attempt in range(3):
-            try:
-                response = await client.messages.create(
-                    model=settings.claude_model,
-                    max_tokens=4096,
-                    system=system,
-                    tools=ORCHESTRATOR_TOOLS,
-                    messages=messages,
-                )
-                last_error = None
-                break
-            except anthropic.APIError as e:
-                last_error = str(e)
-                import asyncio
-                await asyncio.sleep(4 ** attempt)
-        else:
-            update_session_status(session.id, "error")
-            return AgentResponse(
-                session_id=session.id,
-                agent=mode,
-                output=f"API error after retries: {last_error}",
-                findings_count=len(get_findings(session.id)),
-                hypotheses=[],
-                status="error",
-            )
+        # No tool calls — final text answer
+        if not response["tool_calls"]:
+            final_text = response["text"]
+            add_message(session.id, "assistant", final_text)
+            return final_text
 
-        # Collect text from this response
-        for block in response.content:
-            if hasattr(block, "text"):
-                full_output_parts.append(block.text)
+        # Handle "finish" tool
+        finish_calls = [tc for tc in response["tool_calls"] if tc["name"] == "finish"]
+        if finish_calls:
+            summary = finish_calls[0]["input"].get("summary", "Engagement complete.")
+            add_message(session.id, "assistant", summary)
+            return summary
 
-        # If Claude stopped → we're done
-        if response.stop_reason == "end_turn":
-            break
+        # Log AI reasoning text
+        if response["text"]:
+            step(f"AI: {response['text'][:120]}…")
 
-        # If Claude wants to call tools → process them
-        if response.stop_reason == "tool_use":
-            tool_results = []
-            for block in response.content:
-                if block.type == "tool_use":
-                    tool_result = await _handle_tool_call(block.name, block.input)
-                    tool_results.append({
+        # Execute all tool calls
+        tool_results = []
+        for tc in response["tool_calls"]:
+            step(f"→ {tc['name']}({json.dumps(tc['input'])[:80]}…)")
+            result_str = await _dispatch(tc["name"], tc["input"], session)
+            tool_results.append({
+                "tool_call_id": tc["id"],
+                "name": tc["name"],
+                "content": result_str,
+            })
+
+        # Build next message turn — provider-specific format
+        if cfg.provider.value == "anthropic":
+            # Anthropic: assistant message contains tool_use blocks, then tool_result turn
+            messages.append({
+                "role": "assistant",
+                "content": [
+                    {"type": "text", "text": response["text"]}
+                ] + [
+                    {"type": "tool_use", "id": tc["id"], "name": tc["name"], "input": tc["input"]}
+                    for tc in response["tool_calls"]
+                ]
+            })
+            messages.append({
+                "role": "user",
+                "content": [
+                    {
                         "type": "tool_result",
-                        "tool_use_id": block.id,
-                        "content": tool_result,
-                    })
-
-            # Add Claude's response + our tool results to message history
-            messages.append({"role": "assistant", "content": response.content})
-            messages.append({"role": "user", "content": tool_results})
+                        "tool_use_id": tr["tool_call_id"],
+                        "content": tr["content"],
+                    }
+                    for tr in tool_results
+                ]
+            })
         else:
-            break
+            # OpenAI format
+            messages.append({
+                "role": "assistant",
+                "content": response["text"] or None,
+                "tool_calls": [
+                    {
+                        "id": tc["id"],
+                        "type": "function",
+                        "function": {"name": tc["name"], "arguments": json.dumps(tc["input"])},
+                    }
+                    for tc in response["tool_calls"]
+                ],
+            })
+            for tr in tool_results:
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tr["tool_call_id"],
+                    "content": tr["content"],
+                })
 
-    # Generate hypotheses from updated session state
-    hypotheses = await hyp_engine.generate(session)
-    final_findings = get_findings(session.id)
-
-    return AgentResponse(
-        session_id=session.id,
-        agent=mode,
-        output="\n".join(full_output_parts),
-        findings_count=len(final_findings),
-        hypotheses=hypotheses,
-        status="ok",
-    )
-
-
-async def delegate(
-    agent_name: str,
-    subtask: str,
-    session: Session,
-) -> AgentResponse:
-    """
-    Delegate a subtask directly to a named agent,
-    bypassing mode detection.
-    """
-    return await run(subtask, session, mode=agent_name)
+    warn(f"Max iterations ({max_iterations}) reached.")
+    return "Engagement reached iteration limit. Check findings with: phantom sessions findings <id>"
