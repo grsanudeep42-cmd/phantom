@@ -1,0 +1,3 @@
+[submodule "phantom-mcp"]
+	path = phantom-mcp
+	url = https://github.com/grsanudeep42-cmd/phantom-mcp.git
