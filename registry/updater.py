@@ -29,9 +29,13 @@ class UpdateResult:
     error: str = ""
 
 
-async def check_and_update(tool_id: Optional[str] = None) -> list[UpdateResult]:
+async def check_and_update(
+    tool_id: Optional[str] = None,
+    force_reinstall: bool = False,
+) -> list[UpdateResult]:
     """
     Check all cached tools (or just one) for stale versions and update.
+    Pass force_reinstall=True to reinstall even if already up to date.
     Returns a list of UpdateResult for each tool checked.
     """
     cached = list_cached_tools()
@@ -47,7 +51,7 @@ async def check_and_update(tool_id: Optional[str] = None) -> list[UpdateResult]:
         current = _check_installed_version(spec)
         min_v = spec.get("min_version", "0.0")
 
-        if current and _version_ok(current, min_v):
+        if current and _version_ok(current, min_v) and not force_reinstall:
             results.append(UpdateResult(
                 tool_id=cached_tool.tool_id,
                 old_version=cached_tool.version,

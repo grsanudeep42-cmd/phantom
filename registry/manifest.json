@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.0",
+  "schema_version": "1.1",
   "tools": [
     {
       "id": "nmap",
@@ -140,6 +140,216 @@
       "version_regex": "theHarvester ([\\d.]+)",
       "min_version": "4.2",
       "tags": ["osint", "emails", "subdomains", "passive"]
+    },
+    {
+      "id": "masscan",
+      "category": "network",
+      "description": "Internet-scale port scanner — scans entire internet in 6 minutes",
+      "install": {
+        "linux": "apt-get install -y masscan",
+        "darwin": "brew install masscan",
+        "docker": "ilyaglow/masscan"
+      },
+      "version_cmd": "masscan --version",
+      "version_regex": "Masscan version ([\\d.]+)",
+      "min_version": "1.3",
+      "tags": ["network", "ports", "fast", "scan"]
+    },
+    {
+      "id": "rustscan",
+      "category": "network",
+      "description": "Ultra-fast port scanner written in Rust — finds open ports then hands off to nmap",
+      "install": {
+        "linux": "cargo install rustscan",
+        "darwin": "cargo install rustscan",
+        "docker": "rustscan/rustscan"
+      },
+      "version_cmd": "rustscan --version",
+      "version_regex": "rustscan ([\\d.]+)",
+      "min_version": "2.1",
+      "tags": ["network", "ports", "fast", "rust"]
+    },
+    {
+      "id": "netexec",
+      "category": "network",
+      "description": "Network authentication tester — SMB, SSH, WinRM, LDAP, RDP (successor to CrackMapExec)",
+      "install": {
+        "linux": "pip install netexec",
+        "darwin": "pip install netexec",
+        "docker": "byt3bl33d3r/crackmapexec"
+      },
+      "version_cmd": "nxc --version",
+      "version_regex": "([\\d.]+)",
+      "min_version": "1.0",
+      "tags": ["network", "smb", "auth", "lateral"]
+    },
+    {
+      "id": "hashcat",
+      "category": "crack",
+      "description": "GPU-accelerated password cracker — dictionary, mask, rule, combinator attacks",
+      "install": {
+        "linux": "apt-get install -y hashcat",
+        "darwin": "brew install hashcat",
+        "docker": "dizcza/docker-hashcat"
+      },
+      "version_cmd": "hashcat --version",
+      "version_regex": "v([\\d.]+)",
+      "min_version": "6.2",
+      "tags": ["crack", "password", "gpu", "hash"]
+    },
+    {
+      "id": "john",
+      "category": "crack",
+      "description": "John the Ripper — offline password cracker with auto format detection",
+      "install": {
+        "linux": "apt-get install -y john",
+        "darwin": "brew install john-jumbo",
+        "docker": "phocean/john"
+      },
+      "version_cmd": "john --version",
+      "version_regex": "John the Ripper ([\\d.]+)",
+      "min_version": "1.9",
+      "tags": ["crack", "password", "hash", "offline"]
+    },
+    {
+      "id": "hydra",
+      "category": "crack",
+      "description": "Fast network brute-forcer — SSH, FTP, HTTP, RDP, SMB, SMTP and 50+ protocols",
+      "install": {
+        "linux": "apt-get install -y hydra",
+        "darwin": "brew install hydra",
+        "docker": "vanhauser/hydra"
+      },
+      "version_cmd": "hydra -h",
+      "version_regex": "Hydra v([\\d.]+)",
+      "min_version": "9.4",
+      "tags": ["crack", "brute", "network", "login"]
+    },
+    {
+      "id": "trivy",
+      "category": "cloud",
+      "description": "Container, filesystem and cloud misconfiguration scanner — zero config",
+      "install": {
+        "linux": "apt-get install -y wget && wget -qO- https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin",
+        "darwin": "brew install aquasecurity/trivy/trivy",
+        "docker": "aquasec/trivy"
+      },
+      "version_cmd": "trivy --version",
+      "version_regex": "Version: ([\\d.]+)",
+      "min_version": "0.50",
+      "tags": ["cloud", "container", "iac", "docker", "k8s"]
+    },
+    {
+      "id": "checkov",
+      "category": "cloud",
+      "description": "Static analysis for Terraform, CloudFormation, Kubernetes, Dockerfile IaC misconfigs",
+      "install": {
+        "linux": "pip install checkov",
+        "darwin": "pip install checkov",
+        "docker": "bridgecrew/checkov"
+      },
+      "version_cmd": "checkov --version",
+      "version_regex": "([\\d.]+)",
+      "min_version": "3.0",
+      "tags": ["cloud", "iac", "terraform", "k8s", "static"]
+    },
+    {
+      "id": "dalfox",
+      "category": "exploit",
+      "description": "Fast and powerful XSS scanner with DOM analysis and blind XSS support",
+      "install": {
+        "linux": "go install github.com/hahwul/dalfox/v2@latest",
+        "darwin": "go install github.com/hahwul/dalfox/v2@latest",
+        "docker": "hahwul/dalfox"
+      },
+      "version_cmd": "dalfox version",
+      "version_regex": "DalFox ([\\d.]+)",
+      "min_version": "2.9",
+      "tags": ["exploit", "xss", "web", "dom"]
+    },
+    {
+      "id": "jwt-tool",
+      "category": "api",
+      "description": "JWT testing toolkit — decode, forge, attack None alg, key confusion",
+      "install": {
+        "linux": "pip install jwt-tool",
+        "darwin": "pip install jwt-tool",
+        "docker": "ticarpi/jwt_tool"
+      },
+      "version_cmd": "jwt_tool -h",
+      "version_regex": "jwt_tool v([\\d.]+)",
+      "min_version": "2.0",
+      "tags": ["api", "jwt", "auth", "web"]
+    },
+    {
+      "id": "katana",
+      "category": "recon",
+      "description": "Next-gen web crawler — JS rendering, form discovery, automatic scope management",
+      "install": {
+        "linux": "go install github.com/projectdiscovery/katana/cmd/katana@latest",
+        "darwin": "go install github.com/projectdiscovery/katana/cmd/katana@latest",
+        "docker": "projectdiscovery/katana"
+      },
+      "version_cmd": "katana -version",
+      "version_regex": "katana v([\\d.]+)",
+      "min_version": "1.0",
+      "tags": ["recon", "crawler", "web", "js"]
+    },
+    {
+      "id": "ghauri",
+      "category": "exploit",
+      "description": "Advanced SQL injection detection tool — alternative to sqlmap with better WAF bypass",
+      "install": {
+        "linux": "pip install ghauri",
+        "darwin": "pip install ghauri",
+        "docker": ""
+      },
+      "version_cmd": "ghauri --version",
+      "version_regex": "([\\d.]+)",
+      "min_version": "1.0",
+      "tags": ["exploit", "sqli", "waf-bypass", "web"]
+    },
+    {
+      "id": "wfuzz",
+      "category": "fuzzing",
+      "description": "Web application fuzzer — auth bypass, directory enum, injection testing",
+      "install": {
+        "linux": "pip install wfuzz",
+        "darwin": "pip install wfuzz",
+        "docker": "ghcr.io/xmendez/wfuzz"
+      },
+      "version_cmd": "wfuzz --version",
+      "version_regex": "Wfuzz ([\\d.]+)",
+      "min_version": "3.1",
+      "tags": ["fuzzing", "web", "auth", "injection"]
+    },
+    {
+      "id": "feroxbuster",
+      "category": "fuzzing",
+      "description": "Fast, recursive content discovery written in Rust — auto-calibrates to target",
+      "install": {
+        "linux": "cargo install feroxbuster",
+        "darwin": "brew install feroxbuster",
+        "docker": "epi052/feroxbuster"
+      },
+      "version_cmd": "feroxbuster --version",
+      "version_regex": "feroxbuster ([\\d.]+)",
+      "min_version": "2.10",
+      "tags": ["fuzzing", "directories", "recursive", "fast"]
+    },
+    {
+      "id": "amass",
+      "category": "osint",
+      "description": "In-depth attack surface mapping and asset discovery — DNS brute, certificates, APIs",
+      "install": {
+        "linux": "go install -v github.com/owasp-amass/amass/v4/...@master",
+        "darwin": "brew install amass",
+        "docker": "caffix/amass"
+      },
+      "version_cmd": "amass -version",
+      "version_regex": "v([\\d.]+)",
+      "min_version": "4.0",
+      "tags": ["osint", "dns", "subdomains", "asmapping"]
     }
   ]
 }
