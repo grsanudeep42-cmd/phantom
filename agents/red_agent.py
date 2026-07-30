@@ -260,6 +260,7 @@ async def run_intel_phase(
 async def run_full(session: Session) -> None:
     """Run all phases. Uses orchestrator for reasoning between phases."""
     from core.orchestrator import run as orchestrate
+    from cli.ui import findings_table
 
     target = session.target
     section(f"RED AGENT  →  {target}")
@@ -277,11 +278,10 @@ async def run_full(session: Session) -> None:
     recon_result = await run_recon_phase(target, session.id)
     recon_data = json.loads(recon_result)
     success(f"Recon: {recon_data['findings_added']} findings")
-    if recon_data.get("errors"):
-        for e in recon_data["errors"]:
-            warn(f"  Tool unavailable: {e}")
+    for e in recon_data.get("errors", []):
+        warn(f"  Tool unavailable: {e}")
 
-    # Generate hypotheses
+    # Generate hypotheses after recon
     hyps = await generate_hypotheses(session)
     if hyps:
         section("AI Hypotheses — next moves")
@@ -298,14 +298,14 @@ async def run_full(session: Session) -> None:
     vuln_data = json.loads(vuln_result)
     success(f"Vuln scan: {vuln_data['findings_added']} findings")
 
-    # Phase 4: Fuzzing (directories)
+    # Phase 4: Fuzzing
     section("Phase 4 / Directory Fuzzing")
     info("Running ffuf directory brute-force…")
     fuzz_result = await run_fuzzing_phase(target, session.id)
     fuzz_data = json.loads(fuzz_result)
     success(f"Fuzzing: {fuzz_data['findings_added']} endpoints found")
 
-    # Orchestrator reasoning — final analysis
+    # Phase 5: AI Analysis via orchestrator
     section("Phase 5 / AI Analysis")
     info("Running orchestrator reasoning pass…")
     findings = db.get_findings(session.id)
@@ -315,17 +315,17 @@ async def run_full(session: Session) -> None:
         f"and classify each finding by CVSS severity. "
         f"Then call add_finding for any additional inferences you can make."
     )
-    response = await orchestrate(task, session, mode="red")
-    if response.output:
+    # OrchestratorResult — use .output (not bare string)
+    result = await orchestrate(task, session, mode="red")
+    if result.output:
         section("Orchestrator Analysis")
-        console.print(response.output)
+        console.print(result.output)
+    if result.total_cost_usd > 0:
+        info(f"LLM cost this session: ${result.total_cost_usd:.4f}")
 
     # Summary
     final_findings = db.get_findings(session.id)
     section("Engagement Complete")
     success(f"Total findings: {len(final_findings)}")
     info(f"Generate report: [bold]phantom report {session.id[:8]} --format=hackerone[/bold]")
-
-    # Print findings table
-    from cli.ui import findings_table
     findings_table(final_findings)

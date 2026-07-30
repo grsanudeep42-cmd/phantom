@@ -1,0 +1,171 @@
+# PHANTOM Architecture & Component Report
+
+This document breaks down the **20 core functional parts** of the PHANTOM agent framework. It details the purpose of each component, the specific files associated with it, and how it links to the rest of the system. This serves as the blueprint for upgrading each module to production-grade status.
+
+---
+
+## 1. Core Brain
+The foundational logic that drives reasoning, state management, and decision-making.
+
+### 1. Orchestrator + Agent Routing (`core/orchestrator.py`)
+- **Purpose**: The central nervous system. It receives the user's task, determines the mode (red/blue/grey), and uses the LLM (Claude via `tool_use`) to reason. It delegates sub-tasks to specialized agents using an A2A (Agent-to-Agent) pattern.
+- **Linkages**: Receives input from **CLI (19)** or **MCP Server (20)**. Reads/writes to **Session (3)**. Dispatches work to **Agents (4-8)**.
+
+### 2. Hypothesis Engine (`core/hypothesis.py`)
+- **Purpose**: Generates structured "next move" hypotheses after every finding. It looks at the current evidence and suggests what tool to use next with a confidence score.
+- **Linkages**: Triggered by the **Orchestrator (1)** after a tool run. Reads state from **Session (3)**. Feeds suggestions back to the Orchestrator for execution.
+
+### 3. Session + Memory (`core/session.py`, `core/memory.py`)
+- **Purpose**: The persistent, SQLite-backed memory of an engagement. It tracks findings, tried tools, hypotheses, generated personas, and overall scope. It ensures PHANTOM survives crashes and can resume engagements.
+- **Linkages**: Actively queried and updated by **Orchestrator (1)**, **Hypothesis Engine (2)**, and all **Agents (4-11)**.
+
+---
+
+## 2. Agents
+Specialized sub-agents that handle specific types of engagements or tasks.
+
+### 4. Red Agent (`agents/red_agent.py`)
+- **Purpose**: The full offensive pipeline. Executes the complete attack chain: OSINT → Footprinting → Vuln Scan → Exploit → Report.
+- **Linkages**: Called by **Orchestrator (1)**. Relies heavily on **Registry & Execution (12, 13)** to run offensive tools.
+
+### 5. Blue Agent (`agents/blue_agent.py`)
+- **Purpose**: Defensive mode. Analyzes logs (Nginx, syslog), extracts IOCs, looks them up on Threat Intelligence platforms, and generates hardening playbooks/SIEM queries.
+- **Linkages**: Called by **Orchestrator (1)**. Uses read-only analysis tools via **Registry (12)**.
+
+### 6. Grey Agent (`agents/grey_agent.py`)
+- **Purpose**: Bug bounty / OSCP mode. Similar to Red, but strictly stops at verified Proof of Concept (PoC). Does not execute blind exploits or destructive actions.
+- **Linkages**: Requires strict scope validation. Feeds directly into the **Report Engine (18)** with CVSS scores.
+
+### 7. Beginner Agent (`agents/beginner_agent.py`)
+- **Purpose**: Learning and teaching mode. Explains every action before running a tool and explains the findings (OWASP, CVEs) afterward.
+- **Linkages**: Wraps calls to the **Registry (12)** with LLM-generated explanations.
+
+### 8. Identity Agent (`agents/identity_agent.py`)
+- **Purpose**: Orchestrates the creation of fake personas for testing account creation flows, authentication bypasses, or stealth ops.
+- **Linkages**: Called by offensive agents (Red/Grey) when encountering registration pages. Manages the underlying **Identity Layer components (14-17)**.
+
+---
+
+## 3. Intelligence (Phase 10)
+Advanced reasoning modules for target comprehension and continuous operations.
+
+### 9. Target Understanding / Intel Agent (`agents/intel_agent.py`)
+- **Purpose**: Runs *before* active OSINT. Scrapes program scope (e.g., HackerOne), fingerprints the tech stack, and uses the LLM to build a prioritized hunting plan based on the specific architecture.
+- **Linkages**: Writes the threat model to **Session (3)**, which guides the **Orchestrator (1)**.
+
+### 10. Vulnerability Chaining Engine (`core/chaining.py` / `phantom_chain_finding`)
+- **Purpose**: Runs asynchronously in the background. Analyzes every new finding to see if it can be combined with previous findings (e.g., using an IDOR to trigger an SSRF).
+- **Linkages**: Monitors **Session (3)** for new findings. Automatically triggers new workflows via the **Orchestrator (1)** if a chain is plausible.
+
+### 11. Change Detection / Monitor Agent (`agents/monitor_agent.py`)
+- **Purpose**: Continuous infrastructure monitoring. Detects new subdomains via CT logs, tech stack shifts, or new endpoints, alerting on high-value changes.
+- **Linkages**: Designed to run via cron (`phantom monitor run`). Stores baselines in **Session (3)**.
+
+---
+
+## 4. Registry & Execution
+The system that manages and isolates third-party security tools without bloating the host OS.
+
+### 12. Tool Registry + Loader (`registry/manifest.json`, `registry/loader.py`)
+- **Purpose**: Maintains a manifest of all 37+ supported tools. Lazy-loads tools on demand (checking versions, downloading via apt/brew/docker/go) only when they are needed.
+- **Linkages**: Called by agents before execution. Caches tool paths locally.
+
+### 13. Tool Runner (`registry/runner.py`)
+- **Purpose**: Safely executes tools. Preferred method is Docker-isolated subprocesses to prevent environment pollution. Falls back to bare subprocesses with strict timeouts and stderr capture if Docker is unavailable.
+- **Linkages**: Takes executable paths from the **Loader (12)**. Returns standard `ToolResult` objects to the **Agents/Orchestrator**.
+
+---
+
+## 5. Identity Layer
+The infrastructure for generating convincing, stateful fake identities.
+
+### 14. Persona Generator (`identity/persona.py`)
+- **Purpose**: Uses Faker to generate locale-aware names, dates of birth, physical addresses, and occupations.
+- **Linkages**: Driven by the **Identity Agent (8)**.
+
+### 15. Temp Email Server (`identity/email_server.py`)
+- **Purpose**: Provides disposable email addresses. Can run in self-hosted mode (aiosmtpd on port 2525) or use the Guerrilla Mail API as a zero-config fallback.
+- **Linkages**: Emails are attached to the **Persona (14)**.
+
+### 16. SMS OTP (`identity/sms.py`)
+- **Purpose**: Bypasses SMS verification steps using external APIs like SMSPool or TextVerified.
+- **Linkages**: The only external dependency in the identity layer. Numbers are tied to the **Persona (14)**.
+
+### 17. Browser Profile Generator (`identity/browser_profile.py`)
+- **Purpose**: Generates and maintains a consistent User-Agent, timezone, locale headers, and fingerprint for a specific persona.
+- **Linkages**: Used by any web-interaction tools (like HTTPx or custom Python requests) when running under a specific **Persona (14)**.
+
+---
+
+## 6. Reporting & Interfaces
+How the user interacts with PHANTOM and extracts value from it.
+
+### 18. Jinja2 Report Engine (`reporting/generator.py`)
+- **Purpose**: Compiles all verified findings into professional markdown reports using templates tailored for HackerOne, Bugcrowd, or generic pentest formats.
+- **Linkages**: Extracts final confirmed data from **Session (3)**.
+
+### 19. CLI (`cli/main.py`)
+- **Purpose**: The primary terminal interface using `Click` and `Rich`. Provides commands like `phantom red`, `phantom scan`, `phantom identity gen`, and `phantom report`.
+- **Linkages**: Parses user input and kicks off the **Orchestrator (1)**.
+
+### 20. MCP Server (`phantom-mcp/server.py`)
+- **Purpose**: A standalone wrapper using FastMCP that exposes PHANTOM's tools to LLM clients (like Claude Desktop). It acts as a bridge so an external LLM can use PHANTOM as a toolset.
+- **Linkages**: Implements strict `auth/scope.py` middleware. If scope passes, it invokes **Orchestrator (1)** or specific **Agents/Tools** directly.
+
+---
+
+## 7. Web Scraping & Proxies (Burp Suite Alternatives)
+Instead of a manual GUI proxy like Burp Suite, PHANTOM handles web interactions autonomously at scale using best-in-class CLI tools:
+
+- **Web Crawling & Scraping**: 
+  - Uses **`katana`** for next-generation JS rendering and deep web crawling.
+  - Uses **`linkfinder`** to extract endpoints directly from discovered JavaScript files.
+  - The custom **`phantom_js_analyze`** tool pieces these together to automatically scrape sites and hunt for leaked API keys, JWTs, and internal URIs.
+- **Automated Fuzzing (Burp Intruder)**: 
+  - Uses **`ffuf`**, **`wfuzz`**, and **`feroxbuster`** to achieve much higher speeds than Burp Intruder for directory brute-forcing and parameter discovery.
+- **Active Scanning (Burp Scanner)**: 
+  - Uses **`nuclei`** (which has far more templates than Burp's default scanner) and specialized tools like **`sqlmap`** (SQLi), **`dalfox`** (DOM XSS), and **`jwt-tool`** for deep analysis of specific vulnerabilities.
+
+---
+
+## 8. Missing Features to Become the Ultimate Cyber Agent
+To evolve PHANTOM from an incredibly capable pentesting tool into the definitive, unparalleled cybersecurity AI agent, the following capabilities must be researched and implemented:
+
+> [!WARNING]
+> These are the gaps that currently separate PHANTOM from enterprise-grade, nation-state, or fully autonomous APT-level systems.
+
+1. **Browser Manipulation (Puppeteer/Playwright)**
+   - **Current State**: Relies on raw HTTP requests and static JS analysis.
+   - **Missing**: True headless browser manipulation. PHANTOM needs a module to physically drive a Chromium instance to bypass complex Captchas, interact with single-page applications (SPAs) that require heavy DOM interaction, and visually confirm vulnerabilities (e.g., taking a screenshot of an XSS popup).
+
+2. **Cloud Environment Escapes (AWS/GCP/Azure)**
+   - **Current State**: Focuses primarily on web and network perimeters. Uses `trivy` and `checkov` for static IaC checks.
+   - **Missing**: Dynamic cloud exploitation. If PHANTOM finds an AWS key, it needs a dedicated `cloud_agent` that knows how to run `pacu` or `aws-cli` to enumerate IAM permissions, escalate privileges, and pivot through VPCs autonomously.
+
+3. **Active Directory (AD) & Internal Network Pivoting**
+   - **Current State**: Uses `netexec` for initial SMB/auth testing, but lacks a cohesive internal strategy.
+   - **Missing**: A full internal mapping engine. Once an initial foothold is gained, PHANTOM needs to automatically deploy tools like BloodHound (via Python ingestors), execute Pass-the-Hash/Ticket attacks, and map out the fastest path to Domain Admin without human intervention.
+
+4. **Zero-Day Fuzzing & Binary Analysis (Reverse Engineering)**
+   - **Current State**: Can check binary mitigations (`checksec`) and decompile/disassemble (`r2`), but requires human interpretation.
+   - **Missing**: An automated fuzzing harness generator. PHANTOM should be able to take an unknown binary, use the LLM to write an AFL++ or libFuzzer harness, run the fuzzer, and analyze the resulting crashes for exploitability. 
+
+5. **Evasion & C2 (Command & Control) Integration**
+   - **Current State**: Very noisy. Tools like `nmap` and `masscan` will immediately trigger SOC alerts.
+   - **Missing**: A "Stealth Mode" or Evasion engine. PHANTOM needs to be able to throttle requests, rotate proxies/IPs automatically, obfuscate payloads to bypass WAFs/EDRs, and potentially deploy its own lightweight C2 beacons to maintain persistence on compromised targets.
+
+---
+
+## 9. Identity Generation & Authentication Testing (Bug Bounty Focus)
+Bug bounty hunters frequently need to test authentication flows, privilege escalation, and cross-account IDORs. PHANTOM is specifically designed to handle this autonomously:
+- **Persona Generation**: The `Identity Agent` creates a complete, locale-aware fake identity (Name, DOB, Address, Occupation).
+- **Account Registration**: Using the generated persona, PHANTOM can register for the target service to access authenticated attack surfaces.
+- **Email & SMS Verification**: It automatically bypasses verifications using its built-in Temp Email Server (either self-hosted or via Guerrilla Mail) and SMS OTP integration (via SMSPool/TextVerified).
+- **Stateful Profiles**: All generated credentials, session cookies, and browser fingerprints (User-Agents, Timezones) are saved in the `Session` memory so the agent remains authenticated across the entire engagement.
+
+## 10. Data Privacy & Operational Security (OPSEC)
+A critical concern for Red and Blue teams is data leakage (e.g., uploading sensitive client code, internal IPs, or logs to a third-party server). PHANTOM handles OPSEC differently depending on your requirements:
+
+- **Red / Blue Teams (Strict OPSEC)**: For highly confidential, NDA-bound engagements, PHANTOM is designed to run entirely offline. By configuring it to use **Ollama** (e.g., running `llama3.1` locally), **zero bytes of reasoning data leave the host machine**. Additionally, emails can be caught using the self-hosted `aiosmtpd` module rather than external APIs, ensuring complete data sovereignty.
+- **Grey Teams / Bug Bounty (Standard OPSEC)**: As you noted, bug bounties are typically performed on public-facing assets where absolute data secrecy is less critical. Grey agents can safely use faster, more capable cloud LLMs (like Claude Sonnet 4.6 via Anthropic's API) and public APIs (like Guerrilla Mail or VirusTotal) without violating standard bug bounty terms. 
+- **Local Storage**: Regardless of the LLM provider, all session data, findings, personas, and tool caches are stored strictly locally in a SQLite database (`~/.phantom/phantom.db`). PHANTOM does not phone home or sync your pentest data to any central server.

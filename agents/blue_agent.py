@@ -148,6 +148,39 @@ async def generate_siem_queries(session_id: str, siem: str = "splunk") -> str:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Delegation entry point — called by orchestrator.delegate_agent
+# ─────────────────────────────────────────────────────────────────────────────
+
+async def run_blue_phase(target: str, session_id: str, task: str) -> str:
+    """
+    Orchestrator-callable delegation handler.
+    Routes to the correct blue capability based on task description.
+    Returns a plain text or JSON result string.
+    """
+    task_lower = task.lower()
+    if any(k in task_lower for k in ("harden", "checklist", "remediat")):
+        result = await generate_hardening_checklist(target, session_id)
+        return result[:800]
+    elif any(k in task_lower for k in ("ir", "incident", "playbook", "respond")):
+        result = await generate_ir_playbook(session_id)
+        return result[:800]
+    elif any(k in task_lower for k in ("siem", "query", "splunk", "kql")):
+        siem = "splunk" if "splunk" in task_lower else "azure"
+        result = await generate_siem_queries(session_id, siem)
+        return result[:800]
+    elif any(k in task_lower for k in ("log", "analyse", "ioc")):
+        # Extract log path from task if present
+        import re
+        path_match = re.search(r'(/\S+|\w+\.\w+)', task)
+        log_path = path_match.group(1) if path_match else "/var/log/syslog"
+        result = analyze_log_file(log_path, session_id)
+        return str(result)[:800]
+    else:
+        result = await generate_hardening_checklist(target, session_id)
+        return result[:800]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Full pipeline
 # ─────────────────────────────────────────────────────────────────────────────
 

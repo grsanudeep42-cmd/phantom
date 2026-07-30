@@ -1,0 +1,416 @@
+# PHANTOM — Real-World Cybersecurity Gap Analysis
+> Cross-referenced against: NahamSec Resources, PayloadsAllTheThings (79k ⭐), Galaxy Bug Bounty Checklist, OSCP/PNPT methodology, HackerOne top hackers, Red Team operator playbooks
+> Last updated: 2026-07-30
+
+---
+
+## ✅ What PHANTOM Already Has (Strengths)
+
+PHANTOM is ahead of most open-source frameworks in these areas:
+
+| Category | Tool(s) | Coverage |
+|---|---|---|
+| Port Scanning | `nmap`, `masscan`, `rustscan` | ✅ Excellent |
+| Subdomain Enum | `subfinder`, `amass` | ✅ Excellent |
+| Web Crawling | `katana`, `hakrawler` | ✅ Excellent |
+| HTTP Probing | `httpx` | ✅ Excellent |
+| Web Fuzzing | `ffuf`, `feroxbuster`, `dirsearch`, `gobuster`, `dirb` | ✅ Excellent |
+| Vuln Scanning | `nuclei` (3000+ templates) | ✅ Excellent |
+| XSS Scanning | `dalfox` | ✅ Good |
+| SQL Injection | `sqlmap` | ✅ Good |
+| Parameter Discovery | `paramspider`, `arjun`, `x8` | ✅ Good |
+| Password Cracking | `hydra`, `hashcat`, `john` | ✅ Good |
+| Binary Analysis | `ghidra`, `radare2`, `gdb`, `angr` | ✅ Good |
+| Exploitation | `metasploit`, `msfvenom` | ✅ Good |
+| OSINT (Passive) | `subfinder`, `amass` | ⚠️ Partial |
+| Reporting | Jinja2 templates | ⚠️ Basic |
+
+---
+
+## 🚨 CRITICAL GAPS — Missing from PHANTOM
+
+### GAP TIER 1: Used by 90%+ of Bug Bounty Hunters (HIGH PRIORITY)
+
+---
+
+#### 1. 🚫 Traffic Interception / Proxy
+**What pros use:** Burp Suite Pro, OWASP ZAP, Caido
+**What PHANTOM has:** Nothing — PHANTOM fires automated CLI tools but CANNOT intercept, replay, or manually manipulate live HTTP traffic.
+
+**Why it matters:** Every single bug bounty hunter uses a proxy as their primary workspace. Without it:
+- Cannot test business logic (needs manual manipulation)
+- Cannot test multi-step auth flows
+- Cannot modify request headers on-the-fly
+- Cannot do authenticated scanning properly
+
+**Fix for PHANTOM:** Integrate a headless proxy like `mitmproxy` to capture and replay requests programmatically. The agent can then script session replay.
+
+---
+
+#### 2. 🚫 CORS Misconfiguration Scanner
+**What pros use:** `corsy`, `cors-scanner`, Burp CORS plugin
+**What PHANTOM has:** Nothing dedicated — nuclei has some CORS templates but no deep tester
+
+**Why it matters:** CORS misconfigurations are one of the highest-yield bugs on HackerOne. Takes minutes to find, pays $500-$5000.
+
+**Payloads needed:**
+```
+Origin: null
+Origin: https://attacker.com
+Origin: https://evil.victim.com
+```
+
+---
+
+#### 3. 🚫 Race Condition Testing
+**What pros use:** Turbo Intruder (Burp extension), `racepwn`, custom httpx scripts
+**What PHANTOM has:** Nothing
+
+**Why it matters:** Race conditions in payment systems, coupons, and OTP verification = critical severity, massive payouts. Made famous by James Kettle (PortSwigger).
+
+---
+
+#### 4. 🚫 HTTP Request Smuggling
+**What pros use:** `smuggler.py`, `h2csmuggler`, Burp HTTP Smuggler extension
+**What PHANTOM has:** Nothing
+
+**Why it matters:** HTTP Request Smuggling can lead to account takeover, cache poisoning, and WAF bypass. Critical severity in virtually all programs.
+
+---
+
+#### 5. 🚫 OAuth Misconfiguration Testing
+**What pros use:** Manual + `oauth-scan`, custom scripts, Burp
+**What PHANTOM has:** Nothing dedicated
+
+**Common OAuth bugs (all manually tested currently):**
+- `redirect_uri` bypass
+- `state` parameter CSRF
+- Code reuse attacks
+- Token leakage via Referer
+
+---
+
+#### 6. 🚫 2FA/MFA Bypass Testing
+**What pros use:** Manual techniques, Burp Repeater
+**What PHANTOM has:** Nothing
+
+**Common bypasses:**
+- OTP reuse (no expiry)
+- Response manipulation (`"success": false` → `true`)
+- Rate limit bypass on OTP endpoint
+- Backup code brute force
+
+---
+
+#### 7. 🚫 Account Takeover (ATO) Workflow
+**What pros use:** Combination of manual + targeted payloads
+**What PHANTOM has:** No dedicated ATO module
+
+**ATO vectors missing from PHANTOM:**
+- Password reset token predictability
+- Host header injection in reset emails
+- Username enumeration via timing/response
+- Email parameter pollution in registration
+
+---
+
+#### 8. 🚫 Web Cache Poisoning / Deception
+**What pros use:** `Param Miner` (Burp), manual + James Kettle's methodology
+**What PHANTOM has:** Nothing
+
+**Why it matters:** Cache poisoning = XSS/RCE at scale for all users of a site. Cache deception = steal authenticated user data.
+
+---
+
+#### 9. 🚫 Out-of-Band (OAST) Callback Infrastructure
+**What pros use:** `interactsh` (ProjectDiscovery), `webhook.site`, `canarytokens.org`, Burp Collaborator
+**What PHANTOM has:** Uses interactsh in some nuclei templates, but NO dedicated OAST server/client
+
+**Why it matters:** Blind SSRF, blind XSS, blind SQLi, blind XXE — ALL require an out-of-band callback to confirm exploitation. Without OAST, PHANTOM will miss a massive class of blind vulnerabilities.
+
+**Fix:** Integrate `interactsh-client` natively. Every scan that touches SSRF, XXE, or blind injection must have a live OAST listener.
+
+---
+
+#### 10. 🚫 Secrets / API Key Leak Scanner
+**What pros use:** `truffleHog`, `gitleaks`, `git-dumper`, `KeyHacks`, `nuclei` (secret templates)
+**What PHANTOM has:** No dedicated secrets scanner
+
+**What to scan:**
+- GitHub repos of the target company
+- JS files exposed on the site
+- `.git` folder exposed on web servers
+- S3 bucket contents
+- Docker image layers
+
+**Common high-value leaks:**
+- AWS keys (`AKIA...`)
+- Stripe/Twilio/Sendgrid API keys
+- JWT secrets
+- Database credentials in env files
+
+---
+
+### GAP TIER 2: Used by serious bug bounty hunters (MEDIUM PRIORITY)
+
+---
+
+#### 11. 🚫 OSINT Search Engine Integration
+**What pros use:** Shodan, Censys, ZoomEye, crt.sh, VirusTotal, hunter.io, intelx.io, fofa.info
+**What PHANTOM has:** No API integrations for any of these
+
+**Why it matters:** Find exposed admin panels, open databases (Elasticsearch, MongoDB), old SSL certs with subdomains, employee emails for phishing/social engineering.
+
+**Specific missing integrations:**
+- `Shodan API` → find exposed services, versions, CVEs
+- `crt.sh` → subdomain discovery via SSL cert transparency
+- `hunter.io` → employee email patterns for phishing
+- `VirusTotal` → passive DNS, historical URLs
+
+---
+
+#### 12. 🚫 Insecure Deserialization Testing
+**What pros use:** `ysoserial` (Java), `PHPGGC` (PHP), `marshal_bruter` (Python)
+**What PHANTOM has:** Nothing
+
+**Why it matters:** Deserialization RCE is critical severity and extremely common in Java enterprise apps, PHP frameworks, and Python Pickle.
+
+---
+
+#### 13. 🚫 Prototype Pollution Scanner
+**What pros use:** `ppmap`, custom payloads, Burp
+**What PHANTOM has:** Nothing dedicated (some nuclei templates exist)
+
+---
+
+#### 14. 🚫 XXE Injection Testing
+**What pros use:** Manual + `xxeinjector`, custom OOB payloads
+**What PHANTOM has:** nuclei has some XXE templates but no dedicated XXE engine
+
+---
+
+#### 15. 🚫 GraphQL Deep Security Testing
+**What pros use:** `graphw00f`, `clairvoyance`, `graphql-voyager`, `InQL` (Burp)
+**What PHANTOM has:** Basic graphql scanner but no:
+- Introspection abuse
+- Batch query DoS
+- Field suggestion enumeration
+- Nested query depth attacks
+
+---
+
+#### 16. 🚫 SSRF-Specific Deep Testing
+**What pros use:** Custom payloads + OAST callbacks, `ssrfmap`, `gopherus`
+**What PHANTOM has:** Nuclei SSRF templates (basic) but no:
+- Cloud metadata endpoint probing (169.254.169.254, IMDSv2)
+- Protocol smuggling (gopher://, dict://, file://)
+- Internal network pivoting via SSRF
+
+---
+
+#### 17. 🚫 JWT Attack Suite
+**What pros use:** `jwt_tool`, `jwt.io`, Burp JWT editor
+**What PHANTOM has:** Basic JWT analysis but missing:
+- `alg: none` attack
+- Algorithm confusion (RS256 → HS256)
+- JWKS injection
+- Kid parameter injection (SQLi/LFI)
+
+---
+
+#### 18. 🚫 Wordlist Management System
+**What pros use:** SecLists (Daniel Miessler), AssetNote wordlists, custom company-specific lists
+**What PHANTOM has:** No wordlist management — assumes system wordlists exist
+
+**Fix:** Build a wordlist manager that:
+- Auto-downloads SecLists and AssetNote lists on setup
+- Generates target-specific wordlists from crawled content
+- Has tiered wordlists (quick/medium/thorough) per scan mode
+
+---
+
+#### 19. 🚫 Mobile Application Security
+**What pros use:** `MobSF`, `Frida`, `objection`, `jadx`, `apktool`, `dex2jar`
+**What PHANTOM has:** `ghidra` (general binary), NO mobile-specific tooling
+
+**Missing:**
+- APK/IPA static analysis
+- Runtime hooking with Frida
+- SSL pinning bypass
+- Deep link testing
+- Exported activity testing
+
+---
+
+#### 20. 🚫 WordPress / CMS-Specific Scanners
+**What pros use:** `WPScan`, `CMSeeK`, `droopescan`
+**What PHANTOM has:** Nothing CMS-specific
+
+**Why it matters:** Massive percentage of bug bounty targets run WordPress. WPScan finds plugin/theme CVEs automatically.
+
+---
+
+### GAP TIER 3: Red Team / Advanced Operations (LOWER PRIORITY for bug bounty, HIGH for red team)
+
+---
+
+#### 21. 🚫 Active Directory / Internal Network
+**What red teamers use:** `BloodHound`/`SharpHound`, `Impacket`, `CrackMapExec`/`NetExec`, `Responder`, `Evil-WinRM`, `Rubeus`, `Mimikatz`
+**What PHANTOM has:** Basic `enum4linux`, `netexec` integration (partial)
+
+**Missing:**
+- BloodHound graph ingestion + attack path analysis
+- Kerberoasting / ASREProasting
+- Pass-the-Hash / Pass-the-Ticket
+- LDAP enumeration (via `ldapdomaindump`)
+- DCSync attack
+- Lateral movement playbooks
+
+---
+
+#### 22. 🚫 C2 Framework Integration
+**What red teamers use:** Cobalt Strike, Sliver, Havoc, Mythic, Metasploit
+**What PHANTOM has:** Metasploit (basic `msfvenom` and `msfconsole`) but no:
+- Automated beacon deployment
+- C2 listener management
+- Post-exploitation automation
+- Malleable C2 profiles for evasion
+
+---
+
+#### 23. 🚫 Payload Obfuscation / WAF Evasion
+**What pros use:** `Veil`, custom encoders, `donut`, `shellter`
+**What PHANTOM has:** Nothing for EDR/WAF evasion
+
+**Missing:**
+- Payload encoding/obfuscation pipeline
+- WAF fingerprinting + bypass per WAF type (Cloudflare, Akamai, ModSecurity)
+- Traffic shaping to look human
+
+---
+
+#### 24. 🚫 Cloud Attack Surface
+**What cloud pentesters use:** `ScoutSuite`, `Prowler`, `pacu` (AWS), `roadrecon` (Azure AD), `gcp_scanner`
+**What PHANTOM has:** `prowler` and `trivy` (partial) but missing:
+- AWS IAM privilege escalation paths (`pacu`)
+- Azure AD enumeration (`roadrecon`, `AADInternals`)
+- GCP service account abuse
+- S3/Blob/GCS bucket misconfiguration scanner
+
+---
+
+#### 25. 🚫 Phishing / Social Engineering Infrastructure
+**What red teamers use:** `GoPhish`, `Evilginx2`, `Modlishka`
+**What PHANTOM has:** Nothing
+
+---
+
+### GAP TIER 4: 2024-2025 Emerging Threats (FUTURE)
+
+---
+
+#### 26. 🚫 AI/LLM Security Testing
+**What's emerging:** Prompt injection, model extraction, data poisoning, jailbreaking, LLM agent hijacking
+**What PHANTOM has:** Nothing
+
+**Why it matters:** Every major company is shipping LLM-powered features in 2025. Bug bounty programs are starting to include AI attack surfaces. This is the NEXT big category.
+
+**Payloads needed:**
+- Prompt injection in chatbots and AI features
+- Indirect prompt injection via document upload
+- Model inversion / membership inference attacks
+- Training data extraction
+
+---
+
+#### 27. 🚫 Browser Automation / Headless Hacking
+**What pros use:** `Playwright`, `Puppeteer`, `selenium`
+**What PHANTOM has:** No headless browser at all
+
+**Missing capabilities:**
+- Authenticated crawling (login then crawl)
+- JavaScript-rendered page analysis
+- DOM XSS that only triggers in real browser
+- Cookie/session theft via XSS verification
+- SPAs (React/Angular/Vue) that don't work with HTTP-only crawlers
+
+---
+
+#### 28. 🚫 Dependency Confusion / Supply Chain
+**What pros use:** Custom scripts + `confused`, `pip-audit`, `npm audit`
+**What PHANTOM has:** Nothing
+
+---
+
+## 📊 Scorecard: PHANTOM vs Real World
+
+| Domain | Industry Standard | PHANTOM Score |
+|---|---|---|
+| Recon & OSINT | 10/10 | 5/10 ⚠️ |
+| Web Fuzzing | 10/10 | 9/10 ✅ |
+| Vulnerability Scanning | 10/10 | 7/10 ✅ |
+| Web Injection (SQLi/XSS) | 10/10 | 7/10 ✅ |
+| Traffic Interception | 10/10 | 0/10 ❌ |
+| Business Logic Testing | 10/10 | 1/10 ❌ |
+| Race Conditions | 10/10 | 0/10 ❌ |
+| OAuth/JWT/SSO | 10/10 | 2/10 ❌ |
+| OAST/Blind Vuln Detection | 10/10 | 2/10 ❌ |
+| Secrets Scanning | 10/10 | 0/10 ❌ |
+| Mobile Security | 10/10 | 0/10 ❌ |
+| Active Directory | 10/10 | 2/10 ❌ |
+| Cloud Security | 10/10 | 3/10 ⚠️ |
+| Evasion / Stealth | 10/10 | 1/10 ❌ |
+| AI/LLM Security | 10/10 | 0/10 ❌ |
+| Reporting Quality | 10/10 | 4/10 ⚠️ |
+
+**Overall: ~37% coverage of what real professionals use daily.**
+
+---
+
+## 🗺️ Priority Build Roadmap (Post-Architecture)
+
+### PHASE A — Bug Bounty Completion (Weeks 1-4)
+These will close the biggest gap for bug bounty use cases:
+
+1. **OAST Server** (`interactsh` native integration) — enables blind vuln detection
+2. **Secrets Scanner** (`truffleHog` + `gitleaks` + JS secret extractor) — fastest ROI
+3. **CORS Tester** (`corsy` + custom module)
+4. **OAuth/JWT Attack Module** (`jwt_tool` + custom OAuth state/redirect tester)
+5. **Wordlist Manager** (SecLists + AssetNote auto-download + target wordlist generation)
+6. **OSINT API Hub** (Shodan, crt.sh, VirusTotal, hunter.io integrations)
+
+### PHASE B — Advanced Web (Weeks 5-8)
+7. **Race Condition Engine** (concurrent request sender + state tracking)
+8. **Request Smuggling Module** (`smuggler.py` integration)
+9. **Headless Browser** (Playwright for authenticated crawling + DOM XSS)
+10. **Deserialization Tester** (`ysoserial` + `PHPGGC` auto-payload)
+11. **GraphQL Deep Scanner** (`graphw00f` + `clairvoyance`)
+12. **Account Takeover Workflow** (password reset, host header injection, email pollution)
+
+### PHASE C — Red Team (Weeks 9-14)
+13. **BloodHound Integration** (AD attack path auto-analysis)
+14. **C2 Management Layer** (Sliver/Havoc listener automation)
+15. **WAF Evasion Pipeline** (payload obfuscator per WAF type)
+16. **Cloud Attack Suite** (`pacu` for AWS, `roadrecon` for Azure)
+17. **Mobile Analysis Module** (`MobSF` + `Frida` hookchain)
+
+### PHASE D — Future (Month 4+)
+18. **AI/LLM Attack Module** (prompt injection, model extraction)
+19. **Phishing Infrastructure** (`Evilginx2` / `GoPhish` automation)
+20. **Supply Chain Scanner** (dependency confusion, typosquatting)
+
+---
+
+## 🔑 The 3 Things That Would Make PHANTOM #1
+
+Based on research, NO existing open-source tool does all three of these autonomously:
+
+1. **Autonomous OAST** — Automatically spin up a temporary interactsh server, inject OOB payloads across ALL vuln classes (SSRF, XXE, SQLi, XSS), and correlate callbacks to findings.
+
+2. **AI-Driven Business Logic Tester** — This is where LLMs shine. Understand the application's business purpose (e-commerce, SaaS, fintech) and generate context-aware test cases for logic flaws that no scanner can find.
+
+3. **End-to-End Authenticated Scanning** — Use the Identity Agent to register, verify, and authenticate a real account, then use Playwright to crawl the authenticated surface, feed it back to all scanners. No other tool does this autonomously.
+
+---
+
+*Sources: NahamSec Bug Bounty Resources, PayloadsAllTheThings (github.com/swisskyrepo), Galaxy Bug Bounty Checklist, OSCP/PNPT community methodology, HackerOne Hacktivity disclosed reports, Red Team Village CTF writeups*

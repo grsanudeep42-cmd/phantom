@@ -1,0 +1,453 @@
+# PHANTOM Ultra-Deep Gap Analysis — v2
+> Sources: MITRE ATT&CK Enterprise (15 tactics), GhostPack suite, PowerSharpPack (40+ C# tools),
+> InternalAllTheThings, Seatbelt, NahamSec, PayloadsAllTheThings, reconFTW, SecLists
+> Private — Internal Development Reference Only
+
+---
+
+# PART 1: MITRE ATT&CK Enterprise Coverage
+
+MITRE ATT&CK has 15 Enterprise tactics. Here is PHANTOM's honest coverage:
+
+| # | Tactic | PHANTOM Coverage | Missing |
+|---|---|---|---|
+| TA0043 | **Reconnaissance** | 60% | Shodan/Censys APIs, crt.sh, email harvesting, LinkedIn OSINT, favicon hashing |
+| TA0042 | **Resource Development** | 5% | Infra setup, fake identity provisioning, domain purchase, cert acquisition |
+| TA0001 | **Initial Access** | 40% | Phishing infra, USB drops, watering hole, supply chain, VPN bruteforce |
+| TA0002 | **Execution** | 35% | LOLBAS abuse, WMI exec, scheduled tasks, mshta/regsvr32/certutil living-off-land |
+| TA0003 | **Persistence** | 10% | Registry run keys, scheduled tasks, WMI subscriptions, DLL hijacking, startup folder |
+| TA0004 | **Privilege Escalation** | 25% | winPEAS/linPEAS partial, missing token impersonation, UAC bypass, kernel exploits |
+| TA0005 | **Stealth / Defense Evasion** | 5% | AMSI bypass, ETW patching, process hollowing, timestomping, log clearing |
+| TA0112 | **Defense Impairment** | 0% | AV/EDR kill, Defender exclusion abuse, audit log manipulation |
+| TA0006 | **Credential Access** | 30% | Has hashcat/john, missing LSASS dump, Kerberoast, AS-REP roast, DPAPI, DCSync |
+| TA0007 | **Discovery** | 40% | Has nmap/enum4linux, missing Seatbelt host enum, AD enumeration, cloud asset discovery |
+| TA0008 | **Lateral Movement** | 5% | Missing Pass-the-Hash, Pass-the-Ticket, RDP, WinRM, DCOM, SCM lateral movement |
+| TA0009 | **Collection** | 5% | Missing keylogging, screenshot, clipboard monitor, browser credential dump |
+| TA0011 | **Command & Control** | 15% | Has Metasploit shells, missing proper C2 (Sliver/Havoc/Cobalt Strike), DNS C2, HTTPS malleable |
+| TA0010 | **Exfiltration** | 5% | Missing data chunking, DNS exfil, HTTPS exfil, steganography exfil |
+| TA0040 | **Impact** | 5% | Missing ransomware sim, data wipe, service disruption, log destruction |
+
+**Average MITRE ATT&CK coverage: ~20%**
+
+---
+
+# PART 2: Post-Exploitation — The Biggest Gap
+
+This is where PHANTOM is most critically behind. After getting a shell, real operators use:
+
+## 2A. Host Enumeration (What Seatbelt Does — PHANTOM Has NONE of This)
+
+Seatbelt (GhostPack) runs 80+ checks on a compromised host:
+
+| Category | Checks PHANTOM is Missing |
+|---|---|
+| **AV/EDR Detection** | AMSI providers, Windows Defender config, AppLocker rules, Sysmon presence |
+| **Credential Hunting** | DPAPI master keys, Windows Vault, credential manager dump, KeePass files |
+| **Browser Data** | Chrome/Firefox/Edge saved passwords, cookies, history, bookmarks |
+| **Cloud Creds** | AWS `~/.aws/credentials`, Azure tokens, GCP auth files on disk |
+| **Network Intel** | ARP table, DNS cache, TCP/UDP connections, mapped drives, network shares |
+| **Persistence Points** | AutoRuns, scheduled tasks (non-Microsoft), WMI subscriptions, registry run keys |
+| **AD Context** | LAPS config, NTLM settings, Kerberos tickets, domain trusts |
+| **Juicy Files** | PowerShell history, SSH private keys, PuTTY saved sessions, FileZilla creds |
+| **Token Info** | Current privileges (SeDebugPrivilege, SeImpersonatePrivilege), token groups |
+| **LOLBAS** | Living-off-the-land binaries present on host that can be abused |
+
+**Fix:** PHANTOM needs a `host_enum` module that runs the equivalent of `Seatbelt -group=all` on Linux AND Windows targets.
+
+---
+
+## 2B. Credential Access — PHANTOM Has 30%, Needs 100%
+
+What real operators extract:
+
+### Windows Credential Sources (ALL MISSING from PHANTOM):
+```
+LSASS memory dump → sekurlsa::logonpasswords (Mimikatz)
+SAM database → reg save HKLM\SAM
+NTDS.dit → DCSync (domain controller only)
+DPAPI → master keys → browser passwords, credential manager
+Kerberos tickets → klist / Rubeus dump
+LSA secrets → service account passwords
+Chrome/Firefox → encrypted SQLite → decrypt with DPAPI
+KeePass .kdbx → extract + crack
+Windows Credential Manager → cmdkey /list
+Wi-Fi profiles → netsh wlan show profile ... key=clear
+```
+
+### Linux Credential Sources (PARTIALLY in PHANTOM):
+```
+/etc/shadow → john/hashcat ✅ (PHANTOM has this)
+SSH private keys (~/.ssh/id_rsa) ❌
+.bash_history / .zsh_history → plaintext passwords ❌
+Docker secrets / env files ❌
+Git credential store (~/.git-credentials) ❌
+AWS/GCP/Azure credential files ❌
+Application configs (database.yml, .env, config.php) ❌
+```
+
+---
+
+## 2C. Kerberos Attacks — Entirely Missing from PHANTOM
+
+These are the bread and butter of internal AD pentesting:
+
+| Attack | Tool | PHANTOM Status |
+|---|---|---|
+| **Kerberoasting** | Rubeus, Impacket GetUserSPNs | ❌ Missing |
+| **AS-REP Roasting** | Rubeus, Impacket GetNPUsers | ❌ Missing |
+| **Pass-the-Hash** | Impacket, NetExec pth | ❌ Missing |
+| **Pass-the-Ticket** | Rubeus ptt | ❌ Missing |
+| **Overpass-the-Hash** | Rubeus asktgt | ❌ Missing |
+| **Golden Ticket** | Mimikatz golden | ❌ Missing |
+| **Silver Ticket** | Mimikatz silver | ❌ Missing |
+| **DCSync** | Mimikatz lsadump::dcsync | ❌ Missing |
+| **Shadow Credentials** | Whisker | ❌ Missing |
+| **Constrained Delegation** | Rubeus s4u | ❌ Missing |
+| **RBCD Attack** | StandIn, Get-RBCD-Threaded | ❌ Missing |
+| **Certificate Abuse (ESC1-ESC8)** | Certify, Certipy | ❌ Missing |
+
+**Active Directory Certificate Services (ADCS) is the #1 internal pentest finding in 2024-2025.**
+ESC1-ESC8 attacks let you go from low-priv user to Domain Admin via misconfigured certificate templates.
+PHANTOM has zero coverage of this.
+
+---
+
+## 2D. Lateral Movement — 5% Coverage
+
+How operators move between machines:
+
+| Technique | Tools | PHANTOM |
+|---|---|---|
+| WMI Execution | `wmiexec.py` (Impacket) | ❌ |
+| SMB PsExec | `psexec.py` (Impacket) | ❌ |
+| WinRM | `evil-winrm` | ❌ |
+| RDP | `SharpRDP`, `xfreerdp` | ❌ |
+| DCOM | `dcomexec.py` | ❌ |
+| SCM Service Creation | `SCShell`, `scshell.py` | ❌ |
+| WSUS Abuse | `SharpWSUS` | ❌ |
+| SCCM Abuse | `MalSCCM`, `SharpSCCM` | ❌ |
+| SSH Agent Hijack | Manual | ❌ |
+| Kubernetes exec | `kubectl exec` | ❌ |
+
+---
+
+# PART 3: Defense Evasion — PHANTOM Has Almost Nothing
+
+This is the most critical gap for red teamers. Getting a shell is useless if EDR kills it.
+
+## 3A. AMSI (Anti-Malware Scan Interface) Bypass
+Every PowerShell payload PHANTOM generates will be caught without AMSI bypass.
+
+```powershell
+# Basic bypass patterns (ALL missing from PHANTOM):
+[Ref].Assembly.GetType('System.Management.Automation.AmsiUtils').GetField('amsiInitFailed','NonPublic,Static').SetValue($null,$true)
+# Patching amsi.dll in memory via reflection
+# Matt Graeber's 1-line bypass
+# Hardware breakpoint based bypass
+# Memory patching via P/Invoke
+```
+
+## 3B. ETW (Event Tracing for Windows) Blind
+ETW captures everything PowerShell does. Operators patch it:
+```csharp
+// Patch EtwEventWrite to return immediately — MISSING from PHANTOM
+// This blinds Defender, SentinelOne, CrowdStrike telemetry collection
+```
+
+## 3C. Process Injection Techniques (ALL MISSING)
+| Technique | Purpose |
+|---|---|
+| Classic DLL Injection | Inject shellcode via WriteProcessMemory + CreateRemoteThread |
+| Process Hollowing | Replace legitimate process memory with payload |
+| Process Doppelgänging | Use NTFS transactions to hide payload |
+| APC Queue Injection | Queue shellcode via NtQueueApcThread |
+| Module Stomping | Overwrite a loaded DLL's .text section |
+| Thread Hijacking | Suspend thread, redirect RIP, resume |
+| Heaven's Gate (WoW64) | Bypass 32-bit hooks by calling 64-bit syscalls directly |
+| Direct Syscalls | Bypass userland hooks entirely (SysWhispers2/3) |
+| Indirect Syscalls | Use ROP gadgets to reach syscall instruction |
+
+## 3D. Payload Delivery Evasion (ALL MISSING)
+| Technique | Tool | What it Does |
+|---|---|---|
+| AMSI bypass loader | `AmsiScanBufferBypass` | Patches AMSI before payload runs |
+| ETW bypass | `EtwBypass` | Blinds event tracing |
+| Shellcode obfuscation | `donut`, `sgn` | Converts .NET → shellcode, encodes it |
+| PE obfuscation | `ConfuserEx`, `Themida` | Obfuscates .NET assemblies |
+| EDR unhooking | `Freshycalls`, `SysWhispers3` | Removes userland hooks |
+| Signed binary proxy | `LOLBAS` techniques | Uses `mshta`, `regsvr32`, `certutil`, `wscript` |
+| In-memory execution | Reflective DLL loading | Never touches disk |
+| Fileless malware | WMI subscriptions, registry | Persists without exe on disk |
+
+---
+
+# PART 4: Web Application — Remaining Deep Gaps
+
+## 4A. Business Logic Flaws (Requires AI Reasoning — Only PHANTOM Can Solve This)
+No scanner finds these automatically. Examples from real H1 reports:
+- Negative quantity in cart → negative charge to card
+- Coupon code applied unlimited times (race condition)
+- Password reset doesn't invalidate old sessions
+- Email change doesn't require password confirmation
+- Insecure direct object reference on invoice download (`/invoice/1234`)
+- Price manipulation via parameter tampering in checkout
+- Account enumeration via password reset timing difference
+
+**PHANTOM's AI layer is UNIQUELY positioned to test these — no other OSS tool can.**
+
+## 4B. Advanced Injection Techniques Missing
+| Attack | Tool Needed | Current Coverage |
+|---|---|---|
+| SSTI (Server-Side Template Injection) | `tplmap`, manual | Nuclei templates only |
+| CRLF Injection | Manual payloads | Nothing |
+| HTTP Parameter Pollution | Manual | Nothing |
+| Path Traversal (advanced) | `dotdotpwn` | Nothing |
+| Open Redirect Chains | Manual + nuclei | Partial |
+| Host Header Injection | Manual | Nothing |
+| Subdomain Takeover | `subjack`, `can-i-take-over-xyz` | Nothing dedicated |
+| Clickjacking | X-Frame-Options check | Nothing |
+| Content-Type sniffing | Manual | Nothing |
+| WebSocket Vulnerabilities | Manual + Burp | Nothing |
+| XMLRPC attacks | `xmlrpc-brute`, manual | Nothing |
+| Insecure File Upload | Custom payloads | Nothing |
+
+## 4C. Subdomain Takeover — HIGH VALUE, MISSING
+One of the easiest critical findings in bug bounty:
+```bash
+# Tools PHANTOM needs:
+subjack -w subdomains.txt -t 100 -timeout 30 -ssl
+can-i-take-over-xyz  # checks 100+ services
+dnsx -l subdomains.txt -cname  # find dangling CNAMEs
+```
+Services vulnerable to takeover: GitHub Pages, Heroku, Shopify, Fastly, AWS S3, Azure, etc.
+
+## 4D. Prototype Pollution — Growing Attack Surface
+```javascript
+// Payloads PHANTOM doesn't test:
+?__proto__[admin]=true
+?constructor.prototype.admin=true
+// In JSON bodies:
+{"__proto__": {"admin": true}}
+// In URL-encoded:
+foo[__proto__][admin]=true
+```
+`ppmap` and `semgrep` rules needed to detect this server-side and client-side.
+
+---
+
+# PART 5: OSINT — Only 50% Covered
+
+## What Top Bug Bounty Hunters Actually Use for OSINT:
+
+| Tool/Technique | What It Finds | PHANTOM Status |
+|---|---|---|
+| **Shodan** | Exposed services, versions, vulnerable ports across all IPs | ❌ No API |
+| **Censys** | Like Shodan but certificate-first | ❌ No API |
+| **crt.sh** | SSL cert transparency → subdomain discovery | ❌ Missing |
+| **VirusTotal** | Passive DNS, historical subdomains, relations | ❌ Missing |
+| **URLScan.io** | Historical screenshots, DOM, requests of any URL | ❌ Missing |
+| **Wayback Machine** | Historical endpoints, old JS files with leaked keys | ❌ Missing |
+| **FOFA / ZoomEye** | Chinese Shodan alternatives (finds things Shodan misses) | ❌ Missing |
+| **hunter.io / apollo.io** | Employee emails from company domain | ❌ Missing |
+| **LinkedIn OSINT** | Org chart, tech stack from job postings | ❌ Missing |
+| **GitHub Dorking** | Leaked secrets, internal code, API keys | ❌ Missing |
+| **Google Dorks** | site:, inurl:, intitle:, filetype: chains | ❌ Missing |
+| **ASN Lookup** | Find all IP ranges owned by target company | ❌ Missing |
+| **favicon hashing** | Find hidden assets by favicon hash on Shodan/Censys | ❌ Missing |
+| **Reverse WHOIS** | Find all domains registered by same person/org | ❌ Missing |
+
+### GitHub Dorking — Fastest Secrets Source
+Real methodology used by top hunters:
+```
+org:targetcompany password
+org:targetcompany api_key
+org:targetcompany secret
+org:targetcompany BEGIN RSA PRIVATE KEY
+org:targetcompany .env
+org:targetcompany aws_access_key_id
+filename:.npmrc _authToken
+filename:docker-compose.yml password
+```
+Tools: `truffleHog`, `gitleaks`, `gh-dorks`, `gitdorker`
+
+### Favicon Hash Recon (Missing from PHANTOM)
+```python
+import requests, mmh3, codecs
+response = requests.get('https://target.com/favicon.ico')
+favhash = mmh3.hash(codecs.lookup('base64').encode(response.content)[0])
+# Search Shodan: http.favicon.hash:{favhash}
+# Finds ALL servers using this favicon → internal/staging apps exposed
+```
+
+---
+
+# PART 6: Cloud Security — 3% to 80% Gap
+
+## AWS Attack Path (Entire Chain Missing)
+```
+Step 1: Find exposed credentials (truffleHog, GitHub dorking)
+Step 2: Enumerate IAM → aws iam get-user, list-attached-user-policies
+Step 3: Privesc via pacu → iam__privesc_scan
+Step 4: Lateral move → assume-role, sts:AssumeRole chains
+Step 5: Access S3, RDS, EC2 metadata
+Step 6: Exfil via S3 or DNS
+```
+
+**Tools missing from PHANTOM:**
+| Tool | What it Does |
+|---|---|
+| `pacu` | AWS exploitation framework (like Metasploit for AWS) |
+| `aws-cli` enumeration | IAM, EC2, S3, Lambda, RDS enum |
+| `CloudMapper` | Visualize AWS attack surface |
+| `S3Scanner` | Find public S3 buckets for target domain |
+| `bucket-finder` | Brute force S3 bucket names |
+| `enumerate-iam` | Brute force IAM permissions without triggering CloudTrail |
+| `WeirdAAL` | AWS attack library |
+
+## Azure Attack Path (All Missing)
+```
+roadrecon gather → Azure AD full enumeration
+AADInternals → phishing token, password spray, info dump
+MicroBurst → Azure storage, key vaults, function apps
+StormSpotter → BloodHound-like for Azure
+```
+
+## Kubernetes Attack Path (All Missing)
+```bash
+# Common K8s misconfigs PHANTOM doesn't test:
+kubectl get pods --all-namespaces  # overly permissive RBAC
+curl http://169.254.169.254/  # metadata service from container
+mount | grep secret  # mounted secrets in container
+env | grep -i kube  # service account tokens in env
+# Container escape via:
+# - privileged container → host mount
+# - hostPID abuse
+# - docker.sock exposure
+# - runc CVEs (CVE-2019-5736)
+```
+
+---
+
+# PART 7: Forensics & Incident Response — Partially Covered
+
+PHANTOM has `volatility` and `volatility3` which is good. Missing:
+
+| Capability | Tool | Status |
+|---|---|---|
+| Disk image analysis | `autopsy`, `sleuthkit` | ❌ |
+| Network capture analysis | `wireshark`, `tshark`, `zeek` | ❌ |
+| Log analysis | `chainsaw`, `hayabusa` (Windows evtx) | ❌ |
+| Windows artifact parsing | `eric zimmerman tools` (MFT, prefetch, shimcache) | ❌ |
+| Timeline creation | `log2timeline`/`plaso` | ❌ |
+| Malware sandbox | `cuckoo`, `any.run` integration | ❌ |
+| YARA scanning | `yara` with rule sets | ❌ |
+| IOC extraction | `ioc-extractor`, `capa` | ❌ |
+| Memory analysis | `volatility3` ✅ | ✅ Partial |
+
+---
+
+# PART 8: What reconFTW Does That PHANTOM Doesn't
+
+reconFTW is the closest open-source equivalent to PHANTOM's recon pipeline. It uses 80+ tools.
+Tools in reconFTW **not** in PHANTOM:
+
+```
+dnsx           → DNS bruteforce + validation
+puredns        → Massdns-based subdomain resolution  
+resolver       → Custom DNS resolver management
+gau            → Fetch URLs from AlienVault, Wayback, URLscan
+getallurls     → Wayback Machine URL fetcher
+waybackurls    → Historical URL discovery
+trufflehog     → Secret scanning in URLs/JS
+nuclei-templates (full set) → Custom org-specific templates
+proj discovery  → httpx, dnsx, naabu (full ProjectDiscovery suite)
+subjack        → Subdomain takeover
+crt.sh scraper → Certificate transparency
+favfreak       → Favicon hash recon
+cloud_enum     → AWS/GCP/Azure bucket brute force
+s3scanner      → Public bucket finder
+gufw           → AWS account finder
+cairdns        → DNS rebinding
+manifinder     → Google manifest scraping
+webscreenshot  → Mass screenshot tool
+EyeWitness     → Web screenshotter with credential detection
+```
+
+---
+
+# PART 9: Final Scorecard (Expanded)
+
+| Domain | Tools Available in Industry | PHANTOM Has | Score |
+|---|---|---|---|
+| Passive Recon / OSINT | 20+ tools | 3-4 tools | 15% |
+| Active Recon (ports/services) | 8 tools | 5 tools | 70% |
+| Web Fuzzing | 10 tools | 7 tools | 75% |
+| Web Vuln Scanning | 15 tools | 4 tools | 40% |
+| Web Injection Testing | 20 attack types | 6 covered | 30% |
+| Authentication Testing | 10 attack types | 1 covered | 10% |
+| Business Logic Testing | LLM-required | Partial AI | 20% |
+| OAST / Blind Detection | 3 platforms | 0 native | 0% |
+| Secrets Scanning | 8 tools | 0 dedicated | 0% |
+| Host Post-Exploitation | 80+ Seatbelt checks | 0 | 0% |
+| Credential Access (Windows) | 15 techniques | 2 | 13% |
+| Kerberos Attacks | 12 attacks | 0 | 0% |
+| Lateral Movement | 10 techniques | 0 | 0% |
+| Persistence | 20 techniques | 0 | 0% |
+| Defense Evasion | 30 techniques | 0 | 0% |
+| Active Directory (full) | 50+ techniques | 3 | 6% |
+| Cloud Security (AWS/Azure/GCP) | 30+ tools | 2 partial | 7% |
+| Container / K8s Security | 15 tools | 0 | 0% |
+| Mobile Security | 10 tools | 0 | 0% |
+| Forensics / DFIR | 20 tools | 2 | 10% |
+| C2 / Implant Management | 6 frameworks | 1 basic | 15% |
+| AI/LLM Attack Testing | Emerging | 0 | 0% |
+| Reporting Quality | Professional grade | Basic | 25% |
+
+**Weighted Overall: ~18% of professional capability**
+
+---
+
+# PART 10: Priority Build List (Revised After Deep Research)
+
+## 🔴 CRITICAL (Enables most bug bounty findings):
+1. `interactsh` native OAST server — enables ALL blind vuln classes
+2. `truffleHog` + `gitleaks` + GitHub dorker — secrets = fastest money
+3. `Playwright` headless browser — authenticated crawl + DOM XSS
+4. Subdomain takeover engine (`subjack` + dangling CNAME detector)
+5. `crt.sh` + Shodan API + VirusTotal API — proper OSINT pipeline
+6. `corsy` — CORS misconfiguration (5 min to find, $500-5000 payout)
+7. OAuth/JWT full attack suite (`jwt_tool` + custom OAuth tester)
+8. SSTI tester (`tplmap` + custom payload injection)
+
+## 🟠 HIGH (Internal pentest / red team):
+9. Impacket suite automation — Kerberoast, AS-REP Roast, DCSync, WMIexec
+10. BloodHound + SharpHound integration — AD attack path analysis
+11. Seatbelt-equivalent host enumeration module
+12. LSASS dump automation (NanoDump/HandleKatz approach — evasive)
+13. ADCS abuse module (Certify/Certipy — ESC1-ESC8)
+14. `evil-winrm` + `wmiexec` lateral movement automation
+15. AMSI/ETW bypass payload generator
+
+## 🟡 MEDIUM (Cloud / advanced):
+16. `pacu` — AWS attack automation
+17. `roadrecon` — Azure AD enumeration
+18. K8s security scanner (`kube-hunter`, `trivy` for images ✅ partial)
+19. MobSF + Frida — mobile APK analysis pipeline
+20. Race condition engine — concurrent request sender
+21. HTTP Request Smuggling (`smuggler.py`)
+22. `CeWL` — custom wordlist generation from target site
+23. `gau` + `waybackurls` — historical URL harvesting
+
+## 🟢 FUTURE:
+24. AI/LLM prompt injection tester
+25. Supply chain / dependency confusion scanner
+26. `Evilginx2` / phishing infrastructure automation
+27. `cuckoo` malware sandbox integration
+28. YARA rule scanning engine
+29. Windows forensics (Chainsaw + Hayabusa evtx parser)
+30. Network traffic analysis (`tshark`/`zeek` integration)
+
+---
+
+*Private — Internal development reference only. Do not publish.*
+

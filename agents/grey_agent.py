@@ -211,6 +211,36 @@ async def _run_intel_phase(target: str, session_id: str) -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Delegation entry point — called by orchestrator.delegate_agent
+# ─────────────────────────────────────────────────────────────────────────────
+
+async def run_grey_phase(target: str, session_id: str, task: str) -> str:
+    """
+    Orchestrator-callable delegation handler.
+    Routes to the correct grey phase based on the task description.
+    Returns a JSON summary string.
+    """
+    task_lower = task.lower()
+    if any(k in task_lower for k in ("recon", "osint", "subdomain", "passive")):
+        return await run_passive_recon(target, session_id)
+    elif any(k in task_lower for k in ("footprint", "port", "nmap", "fingerprint")):
+        return await run_footprinting(target, session_id)
+    elif any(k in task_lower for k in ("vuln", "scan", "nuclei", "owasp")):
+        return await run_vuln_scan(target, session_id)
+    elif any(k in task_lower for k in ("poc", "confirm", "verify")):
+        return await run_poc_confirm(target, session_id)
+    else:
+        # Default: full recon pipeline
+        r1 = await run_passive_recon(target, session_id)
+        r2 = await run_footprinting(target, session_id)
+        d1, d2 = json.loads(r1), json.loads(r2)
+        return json.dumps({
+            "phase": "grey_combined",
+            "findings_added": d1.get("findings_added", 0) + d2.get("findings_added", 0),
+        })
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Full grey pipeline (CLI entry point)
 # ─────────────────────────────────────────────────────────────────────────────
 
