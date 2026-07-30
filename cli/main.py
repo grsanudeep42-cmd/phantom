@@ -55,7 +55,7 @@ def _apply_llm_config(provider, model, base_url, api_key):
 # ─────────────────────────────────────────────────────────────────────────────
 
 @click.group()
-@click.version_option(version="0.3.0", prog_name="phantom")
+@click.version_option(version="0.5.0", prog_name="phantom")
 def cli() -> None:
     """PHANTOM — General-purpose AI agent. Security-first, extensible to anything."""
     pass
@@ -72,6 +72,7 @@ from cli.commands.report import report_cmd
 from cli.commands.sessions import sessions_cmd
 from cli.commands.tools import tools_cmd
 from cli.commands.identity import identity_cmd
+from cli.commands.monitor import monitor_cmd
 
 cli.add_command(scan_cmd)
 cli.add_command(red_cmd)
@@ -80,6 +81,7 @@ cli.add_command(report_cmd)
 cli.add_command(sessions_cmd)
 cli.add_command(tools_cmd)
 cli.add_command(identity_cmd)
+cli.add_command(monitor_cmd)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

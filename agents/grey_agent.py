@@ -192,6 +192,25 @@ async def run_poc_confirm(target: str, session_id: str) -> str:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Phase 0: Target Intelligence (Phase 10)
+# ─────────────────────────────────────────────────────────────────────────────
+
+async def _run_intel_phase(target: str, session_id: str) -> None:
+    """Run phantom_understand_target (non-fatal)."""
+    try:
+        from agents.intel_agent import phantom_understand_target
+        intel = await phantom_understand_target(target, session_id)
+        success(
+            f"Stack: {', '.join((intel.tech_profile.stack + intel.tech_profile.frameworks)[:4]) or 'unknown'} | "
+            f"API: {intel.tech_profile.api_type} | Surface: {intel.attack_surface.total()} URLs"
+        )
+        if intel.threat_model.ranked:
+            info(f"Top threat: {intel.threat_model.ranked[0]['vuln_class']}")
+    except Exception as exc:
+        warn(f"Intel phase (non-fatal): {exc}")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Full grey pipeline (CLI entry point)
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -203,6 +222,10 @@ async def run_full(session: Session) -> None:
 
     if not session.scope:
         warn("No scope declared. Use --scope to set in-scope assets.")
+
+    # Phase 0: Target Intelligence
+    section("Phase 0 / Target Intelligence")
+    await _run_intel_phase(target, session.id)
 
     # Phase 1: Passive OSINT
     section("Phase 1 / Passive OSINT")

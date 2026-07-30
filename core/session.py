@@ -93,6 +93,24 @@ CREATE INDEX IF NOT EXISTS idx_findings_session   ON findings(session_id);
 CREATE INDEX IF NOT EXISTS idx_tried_session      ON tried(session_id);
 CREATE INDEX IF NOT EXISTS idx_hypotheses_session ON hypotheses(session_id);
 CREATE INDEX IF NOT EXISTS idx_personas_session   ON personas(session_id);
+
+CREATE TABLE IF NOT EXISTS session_kv (
+    session_id  TEXT NOT NULL,
+    key         TEXT NOT NULL,
+    value       TEXT NOT NULL,
+    updated_at  TEXT NOT NULL,
+    PRIMARY KEY (session_id, key)
+);
+
+CREATE TABLE IF NOT EXISTS monitor_snapshots (
+    id          TEXT PRIMARY KEY,
+    target      TEXT NOT NULL,
+    scan_type   TEXT NOT NULL,
+    data        TEXT NOT NULL,
+    timestamp   TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_snapshots_target ON monitor_snapshots(target, scan_type);
 """
 
 
@@ -360,6 +378,15 @@ def add_finding(
                 finding.timestamp,
             ),
         )
+
+    # ── Chain engine — fire-and-forget (never blocks the caller) ────────────
+    try:
+        from core.chainer import fire_chain_analysis
+        fire_chain_analysis(finding.id, session_id)
+    except Exception:
+        pass
+    # ────────────────────────────────────────────────────────────────────────
+
     return finding
 
 
@@ -482,3 +509,78 @@ def update_hypothesis_status(hypothesis_id: str, status: str) -> None:
             "UPDATE hypotheses SET status = ? WHERE id = ?",
             (status, hypothesis_id),
         )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Session KV store
+# ─────────────────────────────────────────────────────────────────────────────
+
+def set_session_kv(session_id: str, key: str, value: str) -> None:
+    """Upsert a key-value pair for a session (used for intel/threat_model storage)."""
+    with _db() as conn:
+        conn.execute(
+            "INSERT INTO session_kv (session_id, key, value, updated_at) "
+            "VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(session_id, key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at",
+            (session_id, key, value, _now()),
+        )
+
+
+def get_session_kv(session_id: str, key: str) -> Optional[str]:
+    """Retrieve a session KV value. Returns None if not set."""
+    with _db() as conn:
+        row = conn.execute(
+            "SELECT value FROM session_kv WHERE session_id = ? AND key = ?",
+            (session_id, key),
+        ).fetchone()
+    return row["value"] if row else None
+
+
+def get_all_session_kv(session_id: str) -> dict:
+    """Return all KV pairs for a session as a plain dict."""
+    with _db() as conn:
+        rows = conn.execute(
+            "SELECT key, value FROM session_kv WHERE session_id = ?",
+            (session_id,),
+        ).fetchall()
+    return {r["key"]: r["value"] for r in rows}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Monitor snapshots
+# ─────────────────────────────────────────────────────────────────────────────
+
+def add_monitor_snapshot(target: str, scan_type: str, data: str) -> None:
+    """Persist a monitor scan snapshot."""
+    with _db() as conn:
+        conn.execute(
+            "INSERT INTO monitor_snapshots (id, target, scan_type, data, timestamp) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (str(uuid.uuid4()), target, scan_type, data, _now()),
+        )
+
+
+def get_monitor_snapshots(
+    target: Optional[str],
+    scan_type: Optional[str] = None,
+    limit: int = 10,
+) -> list[dict]:
+    """Retrieve monitor snapshots ordered newest-first."""
+    with _db() as conn:
+        if target and scan_type:
+            rows = conn.execute(
+                "SELECT * FROM monitor_snapshots WHERE target = ? AND scan_type = ? "
+                "ORDER BY timestamp DESC LIMIT ?",
+                (target, scan_type, limit),
+            ).fetchall()
+        elif target:
+            rows = conn.execute(
+                "SELECT * FROM monitor_snapshots WHERE target = ? ORDER BY timestamp DESC LIMIT ?",
+                (target, limit),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM monitor_snapshots ORDER BY timestamp DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+    return [dict(r) for r in rows]

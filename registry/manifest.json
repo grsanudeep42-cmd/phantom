@@ -476,6 +476,20 @@
       "version_regex": "([\\d.]+)",
       "min_version": "4.12",
       "tags": ["binary", "exploit", "ctf", "rop", "shellcode"]
+    },
+    {
+      "id": "linkfinder",
+      "category": "recon",
+      "description": "Extract endpoints and parameters from JavaScript files — essential for JS recon pipeline",
+      "install": {
+        "linux": "pip install linkfinder",
+        "darwin": "pip install linkfinder",
+        "docker": ""
+      },
+      "version_cmd": "linkfinder --version",
+      "version_regex": "([\\d.]+)",
+      "min_version": "0.1",
+      "tags": ["recon", "js", "endpoints", "web"]
     }
   ]
 }

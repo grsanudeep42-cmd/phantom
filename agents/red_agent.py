@@ -13,7 +13,7 @@ from cli.ui import console, error, finding, info, section, step, success, warn, 
 from core import session as db
 from core.hypothesis import generate as generate_hypotheses
 from core.session import Session, get_session
-from registry.runner import ToolNotAvailableError, run_tool
+from registry.runner import ToolNotAvailableError, run_tool, run_command
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -224,6 +224,36 @@ async def run_fuzzing_phase(target: str, session_id: str, wordlist: Optional[str
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Phase 0: Target Intelligence (Phase 10)
+# ─────────────────────────────────────────────────────────────────────────────
+
+async def run_intel_phase(
+    target: str, session_id: str, program_url: Optional[str] = None
+) -> dict:
+    """Run phantom_understand_target and store intel in session."""
+    section("Phase 0 / Target Intelligence")
+    try:
+        from agents.intel_agent import phantom_understand_target
+        intel = await phantom_understand_target(target, session_id, program_url=program_url)
+        success(
+            f"Stack: {', '.join((intel.tech_profile.stack + intel.tech_profile.frameworks)[:4]) or 'unknown'} | "
+            f"API: {intel.tech_profile.api_type} | "
+            f"Surface: {intel.attack_surface.total()} URLs"
+        )
+        if intel.threat_model.ranked:
+            top = intel.threat_model.ranked[0]
+            info(f"Top threat: {top['vuln_class']} — {top['reasoning'][:80]}")
+        return {
+            "status": "ok",
+            "threat_model_items": len(intel.threat_model.ranked),
+            "surface_total": intel.attack_surface.total(),
+        }
+    except Exception as exc:
+        warn(f"Intel phase error (non-fatal): {exc}")
+        return {"status": "error", "error": str(exc)}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Full red agent pipeline (CLI entry point)
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -237,6 +267,9 @@ async def run_full(session: Session) -> None:
 
     if not session.scope:
         warn("No scope declared. Use --scope to limit the engagement.")
+
+    # Phase 0: Target Intelligence
+    await run_intel_phase(target, session.id)
 
     # Phase 1+2: Recon
     section("Phase 1+2 / OSINT + Footprinting")
