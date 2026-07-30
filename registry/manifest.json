@@ -350,6 +350,132 @@
       "version_regex": "v([\\d.]+)",
       "min_version": "4.0",
       "tags": ["osint", "dns", "subdomains", "asmapping"]
+    },
+    {
+      "id": "metasploit",
+      "category": "exploit",
+      "description": "World's most used penetration testing framework — exploits, payloads, post-exploitation",
+      "install": {
+        "linux": "curl https://raw.githubusercontent.com/rapid7/metasploit-omnibus/master/config/templates/metasploit-framework-wrappers/msfupdate.erb | bash",
+        "darwin": "brew install metasploit",
+        "docker": "metasploitframework/metasploit-framework"
+      },
+      "version_cmd": "msfconsole -v",
+      "version_regex": "([\\d.]+)",
+      "min_version": "6.3",
+      "tags": ["exploit", "post-exploitation", "payloads", "msf"]
+    },
+    {
+      "id": "searchsploit",
+      "category": "exploit",
+      "description": "Offline search tool for Exploit-DB — find public exploits for CVEs and software versions",
+      "install": {
+        "linux": "apt-get install -y exploitdb",
+        "darwin": "brew install exploitdb",
+        "docker": ""
+      },
+      "version_cmd": "searchsploit --version",
+      "version_regex": "([\\d.]+)",
+      "min_version": "1.0",
+      "tags": ["exploit", "cve", "exploit-db", "offline"]
+    },
+    {
+      "id": "shodan-cli",
+      "category": "osint",
+      "description": "Shodan command-line interface — search internet-connected devices, banners, CVEs",
+      "install": {
+        "linux": "pip install shodan",
+        "darwin": "pip install shodan",
+        "docker": ""
+      },
+      "version_cmd": "shodan version",
+      "version_regex": "([\\d.]+)",
+      "min_version": "1.28",
+      "tags": ["osint", "internet", "devices", "banners"]
+    },
+    {
+      "id": "waybackurls",
+      "category": "osint",
+      "description": "Fetch all URLs from the Wayback Machine for a given domain — discover hidden endpoints",
+      "install": {
+        "linux": "go install github.com/tomnomnom/waybackurls@latest",
+        "darwin": "go install github.com/tomnomnom/waybackurls@latest",
+        "docker": ""
+      },
+      "version_cmd": "",
+      "version_regex": "",
+      "min_version": "",
+      "tags": ["osint", "wayback", "urls", "recon"]
+    },
+    {
+      "id": "wappalyzer-cli",
+      "category": "recon",
+      "description": "Technology fingerprinting — detect CMS, frameworks, libraries, servers from URLs",
+      "install": {
+        "linux": "npm install -g wappalyzer",
+        "darwin": "npm install -g wappalyzer",
+        "docker": ""
+      },
+      "version_cmd": "wappalyzer --version",
+      "version_regex": "([\\d.]+)",
+      "min_version": "6.10",
+      "tags": ["recon", "fingerprint", "tech-detect", "cms"]
+    },
+    {
+      "id": "checksec",
+      "category": "binary",
+      "description": "Check ELF/PE binary security mitigations: NX, PIE, RELRO, stack canary, ASLR",
+      "install": {
+        "linux": "pip install checksec.py",
+        "darwin": "pip install checksec.py",
+        "docker": ""
+      },
+      "version_cmd": "checksec --version",
+      "version_regex": "([\\d.]+)",
+      "min_version": "2.6",
+      "tags": ["binary", "exploitation", "mitigations", "re"]
+    },
+    {
+      "id": "binwalk",
+      "category": "binary",
+      "description": "Firmware analysis tool — identify and extract embedded files and filesystems",
+      "install": {
+        "linux": "apt-get install -y binwalk",
+        "darwin": "brew install binwalk",
+        "docker": ""
+      },
+      "version_cmd": "binwalk --help",
+      "version_regex": "Binwalk v([\\d.]+)",
+      "min_version": "2.3",
+      "tags": ["binary", "firmware", "extraction", "forensics"]
+    },
+    {
+      "id": "r2",
+      "category": "binary",
+      "description": "Radare2 — open-source reverse engineering framework for disassembly, debugging, forensics",
+      "install": {
+        "linux": "apt-get install -y radare2",
+        "darwin": "brew install radare2",
+        "docker": "radare/radare2"
+      },
+      "version_cmd": "r2 -version",
+      "version_regex": "radare2 ([\\d.]+)",
+      "min_version": "5.8",
+      "tags": ["binary", "reverse-engineering", "disassembly", "re"]
+    },
+    {
+      "id": "pwntools",
+      "category": "binary",
+      "description": "CTF exploit development framework — ROP, shellcode, format string, heap exploitation",
+      "install": {
+        "linux": "pip install pwntools",
+        "darwin": "pip install pwntools",
+        "docker": ""
+      },
+      "version_cmd": "python3 -c 'import pwn; print(pwn.__version__)'",
+      "version_regex": "([\\d.]+)",
+      "min_version": "4.12",
+      "tags": ["binary", "exploit", "ctf", "rop", "shellcode"]
     }
   ]
 }

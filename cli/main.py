@@ -55,7 +55,7 @@ def _apply_llm_config(provider, model, base_url, api_key):
 # ─────────────────────────────────────────────────────────────────────────────
 
 @click.group()
-@click.version_option(version="0.1.0", prog_name="phantom")
+@click.version_option(version="0.3.0", prog_name="phantom")
 def cli() -> None:
     """PHANTOM — General-purpose AI agent. Security-first, extensible to anything."""
     pass

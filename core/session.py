@@ -314,6 +314,10 @@ def set_session_scope(session_id: str, scope: list[str]) -> None:
         )
 
 
+# Alias used by phantom-mcp session_tools
+update_scope = set_session_scope
+
+
 def delete_session(session_id: str) -> None:
     """Delete a session and all its associated data."""
     with _db() as conn:
